@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Car dev view</title>
+<style>html,body{margin:0;height:100%;background:#ddd}canvas{width:100%;height:100%;display:block}
+#info{position:fixed;left:8px;top:8px;font:12px monospace;background:#fff8;padding:4px 6px}</style>
+<script type="importmap">{"imports":{"three":"/vendor/three/build/three.module.js","three/addons/":"/vendor/three/examples/jsm/"}}</script>
+</head>
+<body>
+<canvas id="c"></canvas><div id="info"></div>
+<script type="module">
+import * as THREE from 'three';
+import { Stage } from '../js/render/stage.js';
+import { buildBody } from '../js/car/body-build.js';
+import { buildCorner, applyCamber } from '../js/car/corners.js';
+import { body, BLUEPRINT_Z_SCALE } from '../cars/e46-325ci/body.js';
+const q = new URLSearchParams(location.search);
+const stage = new Stage(document.getElementById('c'));
+await stage.setEnvironment(q.get('env') || 'studio');
+const t0 = performance.now();
+const OX = body.wheelbase / 2;
+const B = buildBody(body, { zScale: BLUEPRINT_Z_SCALE, offsetX: OX, paint: { color: q.get('col') || '#2b3f5f', finish: q.get('fin') || 'metallic' }, tint: 0.35 });
+stage.scene.add(B.group);
+const design = q.get('wheel') || 'bmw-43';
+const dia = +(q.get('dia') || 16), wid = +(q.get('wid') || 7), et = +(q.get('et') || 47);
+const tire = { width: +(q.get('tw') || 205), aspect: +(q.get('ta') || 55), rim: dia, style: q.get('ts') || 'allseason' };
+const mk = (name, axleX, trackHalf, side, brake) => {
+  const { group, dims } = buildCorner({ name, side, wheel: { design, diameter: dia, width: wid, offset: et, color: q.get('wc') || '#c3c6c9' }, spacer: 0, tire, brake, caliperAngle: name.startsWith('f') ? Math.PI - 0.35 : 0.3 });
+  group.position.set((axleX + OX) / 1000, dims.loadedRadius / 1000, side * (trackHalf + 47) / 1000);
+  applyCamber(group, name.startsWith('f') ? 0.5 : 1.5, side);
+  stage.scene.add(group);
+};
+const fb = { rotorD: 300, rotorT: 22, vented: true, caliper: { type: 'floating', color: '#4a4b4d' } };
+const rb = { rotorD: 294, rotorT: 19, vented: true, caliper: { type: 'floating', color: '#4a4b4d' } };
+mk('fr', 0, 1471 / 2, 1, fb); mk('fl', 0, 1471 / 2, -1, fb); mk('rr', -2725, 1478 / 2, 1, rb); mk('rl', -2725, 1478 / 2, -1, rb);
+document.getElementById('info').textContent = `build ${(performance.now() - t0).toFixed(0)}ms`;
+const views = { side: [[0,0.7,9],[0,0.6,0]], front: [[9,0.7,0],[0,0.6,0]], rear: [[-9,0.7,0],[0,0.6,0]], q3: [[5.2,1.5,4.6],[0,0.55,0]], r3: [[-5,1.5,4.4],[0,0.55,0]], fq: [[4.2,1.0,2.6],[0.9,0.6,0]], low: [[4.6,0.45,3.2],[0,0.5,0]], wheel: [[2.3,0.45,2.2],[1.36,0.32,0.75]] };
+const v = views[q.get('view') || 'q3'];
+stage.camera.position.set(...v[0]); stage.controls.target.set(...v[1]); stage.controls.update();
+window.__ready = true;
+</script>
+</body>
+</html>

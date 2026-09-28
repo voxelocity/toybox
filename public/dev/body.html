@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Body dev view</title>
+<style>html,body{margin:0;height:100%;background:#ddd}canvas{width:100%;height:100%;display:block}
+#info{position:fixed;left:8px;top:8px;font:12px monospace;background:#fff8;padding:4px 6px}</style>
+<script type="importmap">{"imports":{"three":"/vendor/three/build/three.module.js","three/addons/":"/vendor/three/examples/jsm/"}}</script>
+</head>
+<body>
+<canvas id="c"></canvas><div id="info"></div>
+<script type="module">
+import * as THREE from 'three';
+import { Stage } from '../js/render/stage.js';
+import { BodyLoft, gridGeometry } from '../js/cad/body-loft.js';
+import { body, BLUEPRINT_Z_SCALE } from '../cars/e46-325ci/body.js';
+const q = new URLSearchParams(location.search);
+const stage = new Stage(document.getElementById('c'));
+await stage.setEnvironment(q.get('env') || 'studio');
+const ZS = BLUEPRINT_Z_SCALE;
+const loft = new BodyLoft(body, { zScale: ZS });
+const t0 = performance.now();
+const grid = loft.buildGrid();
+const OX = 1362.5;
+const geo = gridGeometry(grid, { offsetX: OX, creaseRows: [38] });
+const ortho = q.get('ortho');
+const mat = new THREE.MeshPhysicalMaterial({ color: q.get('col') || '#b8bcc0', metalness: 0.2, roughness: 0.35, clearcoat: 1, clearcoatRoughness: 0.05, side: THREE.DoubleSide, wireframe: q.has('wire'), transparent: !!ortho, opacity: ortho ? +(q.get('op') || 0.55) : 1 });
+const mesh = new THREE.Mesh(geo, mat); mesh.castShadow = true; mesh.receiveShadow = true;
+stage.scene.add(mesh);
+document.getElementById('info').textContent = `stations ${grid.S} rows ${grid.R} verts ${geo.attributes.position.count} build ${(performance.now()-t0).toFixed(0)}ms`;
+
+const S = 2725 / 685.7, ST = S * 1126 / 1122;
+const X = (xmm) => (xmm + OX) / 1000;
+function overlay(file, corners) {
+  // corners: [x0,y0,z0] top-left, [x1,y1,z1] top-right, [x2,y2,z2] bottom-left (metres)
+  const tex = new THREE.TextureLoader().load(file); tex.colorSpace = THREE.SRGBColorSpace;
+  const g = new THREE.BufferGeometry();
+  const [a, b, c] = corners.map((v) => new THREE.Vector3(...v));
+  const d = b.clone().add(c).sub(a);
+  g.setAttribute('position', new THREE.Float32BufferAttribute([...a.toArray(), ...b.toArray(), ...c.toArray(), ...d.toArray()], 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute([0, 1, 1, 1, 0, 0, 1, 0], 2));
+  g.setIndex([0, 2, 1, 1, 2, 3]);
+  const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide, toneMapped: false }));
+  stage.scene.add(m);
+}
+if (ortho) {
+  stage.floor.visible = false;
+  stage.scene.background = new THREE.Color('#ffffff');
+  const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 60);
+  const asp = innerWidth / innerHeight;
+  let half;
+  if (ortho === 'side') {
+    // blueprint crop: px 20..1178, py 378..752 ; front of car on the left -> view from -Z
+    const xl = (230.9 - 20) * S, xr = (230.9 - 1178) * S, zt = (736 - 378) * S * ZS, zb = (736 - 752) * S * ZS;
+    overlay('ref/side.png', [[X(xl), zt / 1000, 1.5], [X(xr), zt / 1000, 1.5], [X(xl), zb / 1000, 1.5]]);
+    cam.position.set(0, 0.68, -10); cam.up.set(0, 1, 0); cam.lookAt(0, 0.68, 0); half = 2.45;
+  } else if (ortho === 'top') {
+    const sp = (px) => 38 + (px - 29) * (1126 / 1122);
+    const xl = (230.9 - sp(15)) * S, xr = (230.9 - sp(1178)) * S, wt = (1003.5 - 755) * ST, wb = (1003.5 - 1265) * ST;
+    overlay('ref/top.png', [[X(xl), -0.2, wt / 1000], [X(xr), -0.2, wt / 1000], [X(xl), -0.2, wb / 1000]]);
+    cam.position.set(0, 10, 0); cam.up.set(0, 0, 1); cam.lookAt(0, 0, 0); half = 2.45;
+  } else if (ortho === 'front' || ortho === 'rear') {
+    const f = ortho === 'front';
+    const box = f ? [70, 15, 620, 368] : [612, 15, 1150, 368];
+    const cx = f ? 343 : 877.5, gy = 358;
+    const sf = (1369 / 337) * (q.has('fs') ? +q.get('fs') : 1);
+    const wl = (box[0] - cx) * sf, wr = (box[2] - cx) * sf, zt = (gy - box[1]) * sf, zb = (gy - box[3]) * sf;
+    const xp = f ? -3 : 3;
+    overlay(f ? 'ref/front.png' : 'ref/rear.png', [[xp, zt / 1000, (f ? 1 : -1) * wl / 1000], [xp, zt / 1000, (f ? 1 : -1) * wr / 1000], [xp, zb / 1000, (f ? 1 : -1) * wl / 1000]]);
+    cam.position.set(f ? 10 : -10, 0.68, 0); cam.up.set(0, 1, 0); cam.lookAt(0, 0.68, 0); half = 1.2;
+  }
+  cam.left = -half * asp; cam.right = half * asp; cam.top = half; cam.bottom = -half;
+  if (ortho !== 'top') { cam.top = half * 0.62; cam.bottom = -half * 0.38; cam.left = -half * asp * 0.5 * (ortho==='side'?1:1); cam.right = half * asp * 0.5; }
+  if (ortho === 'side') { cam.left = -2.35; cam.right = 2.35; const hh = 2.35 / asp; cam.top = hh; cam.bottom = -hh; }
+  if (ortho === 'top') { cam.left = -2.35; cam.right = 2.35; const hh = 2.35 / asp; cam.top = hh; cam.bottom = -hh; }
+  if (ortho === 'front' || ortho === 'rear') { cam.left = -1.1 * asp; cam.right = 1.1 * asp; cam.top = 1.5; cam.bottom = -0.2; cam.left = -0.85 * asp; cam.right = 0.85 * asp; cam.top = 0.85; cam.bottom = -0.85; }
+  cam.updateProjectionMatrix();
+  stage.camera = cam; stage.controls.enabled = false;
+  stage.controls.object = cam;
+} else {
+  const views = { side: [[0,0.7,9],[0,0.6,0]], front: [[9,0.7,0],[0,0.6,0]], rear: [[-9,0.7,0],[0,0.6,0]], q3: [[5.2,1.6,4.6],[0,0.55,0]], r3: [[-5,1.5,4.4],[0,0.55,0]], fq: [[4.2,1.0,2.6],[0.9,0.6,0]], low: [[4.6,0.45,3.2],[0,0.5,0]] };
+  const v = views[q.get('view') || 'q3'];
+  stage.camera.position.set(...v[0]); stage.controls.target.set(...v[1]); stage.controls.update();
+}
+window.__ready = true;
+</script>
+</body>
+</html>
