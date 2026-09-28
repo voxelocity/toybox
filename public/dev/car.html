@@ -15,13 +15,27 @@ import { Stage } from '../js/render/stage.js';
 import { buildBody } from '../js/car/body-build.js';
 import { buildCorner, applyCamber } from '../js/car/corners.js';
 import { body, BLUEPRINT_Z_SCALE } from '../cars/e46-325ci/body.js';
+import * as D from '../cars/e46-325ci/details.js';
+import { FRONT_BUMPERS, REAR_BUMPERS } from '../cars/e46-325ci/bumpers.js';
+import { plainPaint } from '../js/car/body-build.js';
 const q = new URLSearchParams(location.search);
 const stage = new Stage(document.getElementById('c'));
 await stage.setEnvironment(q.get('env') || 'studio');
 const t0 = performance.now();
 const OX = body.wheelbase / 2;
-const B = buildBody(body, { zScale: BLUEPRINT_Z_SCALE, offsetX: OX, paint: { color: q.get('col') || '#2b3f5f', finish: q.get('fin') || 'metallic' }, tint: 0.35 });
+const B = buildBody(body, { zScale: BLUEPRINT_Z_SCALE, offsetX: OX, paint: { color: q.get('col') || '#2b3f5f', finish: q.get('fin') || 'metallic' }, tint: 0.35,
+  front: FRONT_BUMPERS[q.get('fb') || 'stock'], rear: REAR_BUMPERS[q.get('rb') || 'stock'] });
 stage.scene.add(B.group);
+if (q.has('nomask')) B.uniforms.uUseMasks.value = 0;
+if (q.has('noshadow')) stage.sun.castShadow = false;
+const pm = B.paint.userData.plain || plainPaint(B.paint);
+stage.scene.add(D.buildHeadlights(B.field, OX, q.get('hl') || 'halogen'));
+stage.scene.add(D.buildKidneys(B.field, OX, q.get('kid') || 'chrome'));
+stage.scene.add(D.buildTaillights(B.field, OX, q.get('tl') || 'oem'));
+stage.scene.add(D.buildMirrors(B.field, OX, q.get('mir') || 'oem', pm));
+stage.scene.add(D.buildSideHardware(B.field, OX, pm));
+stage.scene.add(D.buildBadges(B.field, OX));
+stage.scene.add(D.buildWipers(B.field, OX));
 const design = q.get('wheel') || 'bmw-43';
 const dia = +(q.get('dia') || 16), wid = +(q.get('wid') || 7), et = +(q.get('et') || 47);
 const tire = { width: +(q.get('tw') || 205), aspect: +(q.get('ta') || 55), rim: dia, style: q.get('ts') || 'allseason' };
@@ -35,10 +49,10 @@ const fb = { rotorD: 300, rotorT: 22, vented: true, caliper: { type: 'floating',
 const rb = { rotorD: 294, rotorT: 19, vented: true, caliper: { type: 'floating', color: '#4a4b4d' } };
 mk('fr', 0, 1471 / 2, 1, fb); mk('fl', 0, 1471 / 2, -1, fb); mk('rr', -2725, 1478 / 2, 1, rb); mk('rl', -2725, 1478 / 2, -1, rb);
 document.getElementById('info').textContent = `build ${(performance.now() - t0).toFixed(0)}ms`;
-const views = { side: [[0,0.7,9],[0,0.6,0]], front: [[9,0.7,0],[0,0.6,0]], rear: [[-9,0.7,0],[0,0.6,0]], q3: [[5.2,1.5,4.6],[0,0.55,0]], r3: [[-5,1.5,4.4],[0,0.55,0]], fq: [[4.2,1.0,2.6],[0.9,0.6,0]], low: [[4.6,0.45,3.2],[0,0.5,0]], wheel: [[2.3,0.45,2.2],[1.36,0.32,0.75]] };
+const views = { side: [[0,0.7,9],[0,0.6,0]], front: [[9,0.7,0],[0,0.6,0]], rear: [[-9,0.7,0],[0,0.6,0]], q3: [[5.2,1.5,4.6],[0,0.55,0]], r3: [[-5,1.5,4.4],[0,0.55,0]], fq: [[4.2,1.0,2.6],[0.9,0.6,0]], low: [[4.6,0.45,3.2],[0,0.5,0]], wheel: [[2.3,0.45,2.2],[1.36,0.32,0.75]], nose: [[3.6,0.7,1.2],[1.9,0.5,0]], tail: [[-3.7,0.9,1.6],[-2,0.7,0]] };
 const v = views[q.get('view') || 'q3'];
 stage.camera.position.set(...v[0]); stage.controls.target.set(...v[1]); stage.controls.update();
-window.__ready = true;
+window.__scene = stage.scene; window.__stage = stage; window.__B = B; window.__ready = true;
 </script>
 </body>
 </html>

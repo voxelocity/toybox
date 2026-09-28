@@ -17,7 +17,8 @@ export const SEGMENTS = [
   { key: 'crown', n: 20 },   // top centre -> ue
   { key: 'glass', n: 10 },   // ue -> bl
   { key: 'ledge', n: 8 },    // bl -> sh
-  { key: 'upper', n: 8 },    // sh -> wd
+  { key: 'upper', n: 7 },    // sh -> bt
+  { key: 'bump', n: 6 },     // bt -> wd (bt = bumper top parting line at the ends)
   { key: 'mid', n: 7 },      // wd -> lm
   { key: 'lower', n: 9 },    // lm -> rk
   { key: 'sill', n: 7 },     // rk -> sb
@@ -43,7 +44,7 @@ export class BodyLoft {
     this.zBot = pchip(def.zBot.map(([x, z]) => [x, z * zs]));
     const cols = (rows) => pchipColumns(rows.map(([x, w, z]) => [x, w, z * zs]));
     this.lines = {};
-    for (const k of ['ue', 'bl', 'sh', 'wd', 'lm', 'rk', 'sb']) this.lines[k] = cols(def[k]);
+    for (const k of ['ue', 'bl', 'sh', 'bt', 'wd', 'lm', 'rk', 'sb']) this.lines[k] = cols(def[k]);
     this.crown = pchip(def.crown);
     this.nose = {
       split: def.nose.split.map((z) => z * zs),
@@ -78,11 +79,11 @@ export class BodyLoft {
   /** Half cross-section at station x: array of [w, z] rows, top centre to bottom centre. */
   section(x) {
     const zt = this.zTop(x), zb = this.zBot(x);
-    let K = ['ue', 'bl', 'sh', 'wd', 'lm', 'rk', 'sb'].map((k) => this.key(k, x));
+    let K = ['ue', 'bl', 'sh', 'bt', 'wd', 'lm', 'rk', 'sb'].map((k) => this.key(k, x));
     // keep key heights inside the section and in descending order
     let ceiling = zt;
     K = K.map(([w, z]) => { const zz = clamp(Math.min(z, ceiling), zb, zt); ceiling = zz; return [w, zz]; });
-    const [ue, bl, sh, wd, lm, rk, sb] = K;
+    const [ue, bl, sh, bt, wd, lm, rk, sb] = K;
     const p = this.crown(x);
     const pts = [];
     const push = (w, z) => pts.push([Math.max(0, w), z]);
@@ -113,16 +114,30 @@ export class BodyLoft {
     }
     // ledge: belt -> shoulder crease, convex
     seg(bl, sh, [lerp(bl[0], sh[0], 0.7), lerp(bl[1], sh[1], 0.2)], SEGMENTS[2].n);
-    // upper side: crease -> widest point (vertical tangent at wd)
-    seg(sh, wd, [lerp(sh[0], wd[0], 0.85), lerp(sh[1], wd[1], 0.25)], SEGMENTS[3].n, [wd[0], lerp(sh[1], wd[1], 0.6)]);
+    // upper side: crease -> bumper-top line -> widest point (vertical tangent at wd)
+    {
+      // one cubic from sh to wd, split at the height of bt so a row lands on it
+      const c1 = [lerp(sh[0], wd[0], 0.85), lerp(sh[1], wd[1], 0.25)], c2 = [wd[0], lerp(sh[1], wd[1], 0.6)];
+      const zAt = (t) => cbez(sh, c1, c2, wd, t)[1];
+      let lo = 0, hi = 1;
+      for (let i = 0; i < 30; i++) { const m = (lo + hi) / 2; if (zAt(m) > bt[1]) lo = m; else hi = m; }
+      const tb = clamp((lo + hi) / 2, 0.02, 0.98);
+      const n1 = SEGMENTS[3].n, n2 = SEGMENTS[4].n;
+      for (let i = 0; i < n1; i++) { const q = cbez(sh, c1, c2, wd, tb * (i / n1)); push(q[0], q[1]); }
+      for (let i = 0; i < n2; i++) {
+        // pack rows toward the bumper-top line so the ledge at the ends stays clean
+        const u = i / n2, t = tb + (1 - tb) * (u * u * 0.6 + u * 0.4);
+        const q = cbez(sh, c1, c2, wd, t); push(q[0], q[1]);
+      }
+    }
     // mid side: widest -> lower line
-    seg(wd, lm, [wd[0], lerp(wd[1], lm[1], 0.45)], SEGMENTS[4].n);
+    seg(wd, lm, [wd[0], lerp(wd[1], lm[1], 0.45)], SEGMENTS[5].n);
     // lower side: lower line -> rocker top
-    seg(lm, rk, [lerp(lm[0], rk[0], 0.25), lerp(lm[1], rk[1], 0.55)], SEGMENTS[5].n);
+    seg(lm, rk, [lerp(lm[0], rk[0], 0.25), lerp(lm[1], rk[1], 0.55)], SEGMENTS[6].n);
     // sill: rocker -> sill bottom corner (tucks under)
-    seg(rk, sb, [rk[0] - 2, lerp(rk[1], sb[1], 0.8)], SEGMENTS[6].n, [lerp(rk[0], sb[0], 0.55), sb[1] - 2]);
+    seg(rk, sb, [rk[0] - 2, lerp(rk[1], sb[1], 0.8)], SEGMENTS[7].n, [lerp(rk[0], sb[0], 0.55), sb[1] - 2]);
     // floor: sill corner -> centre
-    const nFloor = SEGMENTS[7].n;
+    const nFloor = SEGMENTS[8].n;
     for (let i = 0; i < nFloor; i++) {
       const t = Math.pow(i / nFloor, 0.7);
       push(sb[0] * (1 - t), lerp(sb[1], zb, Math.min(1, t * 1.6)));
@@ -207,13 +222,13 @@ export function gridGeometry(grid, { filter = () => true, creaseRows = [], offse
   const pos = [], uv = [], idx = [];
   const vmap = new Map();
   const vert = (s, r, side, copy) => {
-    const onCentre = P[(s * R + r) * 3 + 2] < 0.05; // shared by both sides -> no seam
+    const onCentre = P[(s * R + r) * 3 + 2] < 1.0; // shared by both sides -> no seam
     const key = ((s * R + r) * 2 + (side > 0 || onCentre ? 1 : 0)) * 2 + copy;
     let v = vmap.get(key);
     if (v !== undefined) return v;
     const o = (s * R + r) * 3;
     v = pos.length / 3;
-    pos.push((P[o] + offsetX) / 1000, P[o + 1] / 1000, side * P[o + 2] / 1000);
+    pos.push((P[o] + offsetX) / 1000, P[o + 1] / 1000, onCentre ? 0 : side * P[o + 2] / 1000);
     uv.push(s / (S - 1), r / (R - 1));
     vmap.set(key, v);
     return v;

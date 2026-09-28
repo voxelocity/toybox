@@ -1,7 +1,8 @@
 // Builds the painted body shell, glass, arch lips and liners from a body definition.
 import * as THREE from 'three';
 import { BodyLoft, gridGeometry, SEGMENTS } from '../cad/body-loft.js';
-import { buildSideMask, buildPlanMask, maskTexture } from '../cad/body-masks.js';
+import { buildSideMask, buildPlanMask, buildEndMask, maskTexture } from '../cad/body-masks.js';
+import { SurfaceField } from '../cad/surface.js';
 import { bodyUniforms, makePaintMaterial, makeGlassMaterial, makeBodyDepthMaterial, sharedMaterials } from '../render/materials.js';
 
 export const ROW = (() => {
@@ -20,8 +21,16 @@ export function buildBody(def, opts = {}) {
   const zScale = opts.zScale ?? 1;
   const offsetX = opts.offsetX ?? def.wheelbase / 2;
   const loft = new BodyLoft(def, { zScale });
-  if (opts.deform) loft.deform = opts.deform;
+  const deforms = [opts.deform, opts.front?.deform, opts.rear?.deform, opts.side?.deform].filter(Boolean);
+  if (deforms.length) {
+    loft.deform = (x, w, z, row) => {
+      let cur = null;
+      for (const d of deforms) { const r = d(x, cur ? cur[0] : w, cur ? cur[1] : z, row); if (r) cur = r; }
+      return cur;
+    };
+  }
   const grid = loft.buildGrid();
+  const field = new SurfaceField(loft, grid);
   const group = new THREE.Group();
   group.name = 'body';
 
@@ -29,6 +38,8 @@ export function buildBody(def, opts = {}) {
     sideL: maskTexture(buildSideMask(def, { zScale, side: 'left' })),
     sideR: maskTexture(buildSideMask(def, { zScale, side: 'right' })),
     plan: maskTexture(buildPlanMask(def)),
+    front: maskTexture(buildEndMask(opts.front?.frontMask)),
+    rear: maskTexture(buildEndMask(opts.rear?.rearMask)),
   };
   const arches = def.arches.map((a) => ({ x: a.x, z: a.z * zScale, r: a.r, innerW: 430 }));
   const uniforms = bodyUniforms({ ...masks, offsetX, arches });
@@ -79,7 +90,10 @@ export function buildBody(def, opts = {}) {
     group.add(linerMesh);
   }
 
-  return { group, loft, grid, uniforms, paint, glass: glassMat, masks, arches, offsetX };
+  // --- bumper parts (grilles, fogs, markers)
+  for (const v of [opts.front, opts.rear, opts.side]) if (v?.features) group.add(v.features(field, offsetX, paint));
+
+  return { group, loft, grid, field, uniforms, paint, glass: glassMat, masks, arches, offsetX };
 }
 
 /** A plain copy of the paint (no masks) for small painted parts. Kept in sync by syncPlain(). */

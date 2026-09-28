@@ -10,6 +10,7 @@ import * as THREE from 'three';
 
 export const SIDE_BOUNDS = { x0: -3800, x1: 850, z0: 0, z1: 1450 };
 export const PLAN_BOUNDS = { x0: -3800, x1: 850, w0: 0, w1: 920 };
+export const END_BOUNDS = { w1: 920, z0: 0, z1: 1100 };
 
 function canvas(w, h) {
   const c = document.createElement('canvas');
@@ -83,11 +84,6 @@ export function buildSideMask(def, { zScale = 1, side = 'left', extra = null } =
     const f = def.fuelDoor;
     ctx[3].lineWidth = 2.2 * pxPerMm;
     ctx[3].beginPath(); ctx[3].ellipse(sx(f.x), sy(f.z), f.r * pxPerMm, f.r * pxPerMm * (1 / zScale), 0, 0, Math.PI * 2); ctx[3].stroke();
-  }
-  // side repeater on the front fender (amber/clear lens, drawn as black trim ring + chrome)
-  if (def.sideMarker) {
-    const s = def.sideMarker;
-    ctx[1].beginPath(); ctx[1].ellipse(sx(s.x), sy(s.z), (s.len / 2) * pxPerMm, (s.h / 2) * pxPerMm, 0, 0, Math.PI * 2); ctx[1].fill();
   }
   if (extra) extra({ ctx, sx, sy, pxPerMm, poly, line });
   return packChannels(chs, W, H);
@@ -167,6 +163,26 @@ export function buildPlanMask(def, { extra = null } = {}) {
   if (trunk) line(ctx[3], trunk, 2.4);
   if (def.roofTrim) { ctx[3].lineWidth = 1.5; line(ctx[3], def.roofTrim, 1.6); }
   if (extra) extra({ ctx, sx, sy, pxPerMm, poly, line });
+  return packChannels(chs, W, H);
+}
+
+/**
+ * Front or rear projection mask (w, z). `draw(api)` receives the channel
+ * contexts and helpers in millimetres: ctx[0] cut, ctx[1] black, ctx[2] chrome, ctx[3] lines.
+ */
+export function buildEndMask(draw) {
+  const W = 1024, H = 1224, B = END_BOUNDS;
+  const sx = (w) => (w / B.w1) * W;
+  const sy = (z) => H - ((z - B.z0) / (B.z1 - B.z0)) * H;
+  const pxPerMm = W / B.w1;
+  const chs = [0, 1, 2, 3].map(() => { const c = canvas(W, H); const g = c.getContext('2d'); g.fillStyle = '#000'; g.fillRect(0, 0, W, H); return c; });
+  const ctx = chs.map((c) => c.getContext('2d'));
+  const poly = (g, pts) => { g.beginPath(); pts.forEach(([w, z], i) => (i ? g.lineTo(sx(w), sy(z)) : g.moveTo(sx(w), sy(z)))); g.closePath(); };
+  const line = (g, pts, widthMm) => { g.lineWidth = widthMm * pxPerMm; g.lineJoin = 'round'; g.lineCap = 'round'; g.beginPath(); pts.forEach(([w, z], i) => (i ? g.lineTo(sx(w), sy(z)) : g.moveTo(sx(w), sy(z)))); g.stroke(); };
+  const rrect = (g, w0, z0, w1, z1, r) => { g.beginPath(); g.roundRect(sx(w0), sy(z1), sx(w1) - sx(w0), sy(z0) - sy(z1), r * pxPerMm); };
+  const circle = (g, w, z, r) => { g.beginPath(); g.arc(sx(w), sy(z), r * pxPerMm, 0, Math.PI * 2); };
+  for (const g of ctx) { g.fillStyle = '#fff'; g.strokeStyle = '#fff'; }
+  if (draw) draw({ ctx, sx, sy, pxPerMm, poly, line, rrect, circle });
   return packChannels(chs, W, H);
 }
 

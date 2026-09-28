@@ -1,6 +1,6 @@
 // Shared materials: car paint with projected masks, glass, trim, rubber, carbon.
 import * as THREE from 'three';
-import { SIDE_BOUNDS, PLAN_BOUNDS } from '../cad/body-masks.js';
+import { SIDE_BOUNDS, PLAN_BOUNDS, END_BOUNDS } from '../cad/body-masks.js';
 
 let flakeTex = null;
 /** Tiny random-normal texture used for metallic flake sparkle under the clearcoat. */
@@ -51,6 +51,10 @@ const MASK_COMMON = /* glsl */ `
   uniform vec4 uArch0;        // x, z, r, innerW (mm)
   uniform vec4 uArch1;
   uniform float uUseMasks;
+  uniform sampler2D uFrontMask;
+  uniform sampler2D uRearMask;
+  uniform vec4 uEndBounds;    // w1 (half width), z0, z1, unused
+  uniform vec2 uEndX;         // x above which the front mask applies, x below which the rear applies
   vec3 carMM() { return vec3(vCarPos.x * 1000.0 - uOffsetX, vCarPos.y * 1000.0, abs(vCarPos.z) * 1000.0); }
   vec4 sideMask(vec3 c) {
     vec2 uv = vec2((c.x - uSideBounds.x) / (uSideBounds.y - uSideBounds.x), (c.y - uSideBounds.z) / (uSideBounds.w - uSideBounds.z));
@@ -63,12 +67,21 @@ const MASK_COMMON = /* glsl */ `
     return vec4(m.rgb, 1.0 - m.a);
   }
   // combined mask: rgb = glass, black trim, chrome ; a = shut line darkness
+  vec4 endMask(vec3 c, vec3 n) {
+    vec2 uv = vec2(c.z / uEndBounds.x, (c.y - uEndBounds.y) / (uEndBounds.z - uEndBounds.y));
+    if (uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return vec4(0.0);
+    float wf = step(uEndX.x, c.x) * smoothstep(0.12, 0.3, n.x);
+    float wr = step(c.x, uEndX.y) * smoothstep(0.12, 0.3, -n.x);
+    vec4 f = texture2D(uFrontMask, uv); f.a = 1.0 - f.a;
+    vec4 r = texture2D(uRearMask, uv); r.a = 1.0 - r.a;
+    return max(f * wf, r * wr);
+  }
   vec4 bodyMasks(vec3 c, vec3 n) {
     float ws = smoothstep(0.35, 0.7, abs(n.z));
     float wp = smoothstep(0.25, 0.55, n.y);
     vec4 s = sideMask(c) * ws;
     vec4 p = planMask(c) * wp;
-    return max(s, p);
+    return max(max(s, p), endMask(c, n));
   }
   float archCut(vec3 c) {
     float a0 = step(length(vec2(c.x - uArch0.x, c.y - uArch0.y)), uArch0.z) * step(uArch0.w, c.z);
@@ -85,8 +98,12 @@ function injectCommon(shader, uniforms) {
   shader.fragmentShader = shader.fragmentShader.replace('#include <common>', '#include <common>\n' + MASK_COMMON);
 }
 
-export function bodyUniforms({ sideL, sideR, plan, offsetX, arches }) {
+export function bodyUniforms({ sideL, sideR, plan, front, rear, offsetX, arches, endX = [300, -3300] }) {
   return {
+    uFrontMask: { value: front },
+    uRearMask: { value: rear },
+    uEndBounds: { value: new THREE.Vector4(END_BOUNDS.w1, END_BOUNDS.z0, END_BOUNDS.z1, 0) },
+    uEndX: { value: new THREE.Vector2(endX[0], endX[1]) },
     uSideMaskL: { value: sideL },
     uSideMaskR: { value: sideR },
     uPlanMask: { value: plan },
@@ -129,15 +146,23 @@ export function makePaintMaterial(uniforms, { color = '#2b3f5f', finish = 'metal
         diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.012), bm.g);
         diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.95), bm.b);
         diffuseColor.rgb *= 1.0 - 0.9 * line;
+        float under = smoothstep(-0.3, -0.75, cn.y) * (1.0 - step(320.0, cm.y));
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.018), under);
         diffuseColor.a = keep;`)
       .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
         roughnessFactor = mix(roughnessFactor, 0.3, bm.g);
         roughnessFactor = mix(roughnessFactor, 0.06, bm.b);
-        roughnessFactor = mix(roughnessFactor, 0.9, line);`)
+        roughnessFactor = mix(roughnessFactor, 0.9, line);
+        roughnessFactor = mix(roughnessFactor, 0.95, under);`)
       .replace('#include <metalnessmap_fragment>', `#include <metalnessmap_fragment>
         metalnessFactor = mix(metalnessFactor, 0.0, bm.g);
         metalnessFactor = mix(metalnessFactor, 1.0, bm.b);
-        metalnessFactor = mix(metalnessFactor, 0.0, line);`);
+        metalnessFactor = mix(metalnessFactor, 0.0, line);
+        metalnessFactor = mix(metalnessFactor, 0.0, under);`)
+      .replace('#include <lights_physical_fragment>', `#include <lights_physical_fragment>
+        #ifdef USE_CLEARCOAT
+          material.clearcoat *= (1.0 - under) * (1.0 - 0.8 * line) * (1.0 - 0.6 * bm.g);
+        #endif`);
     // the clearcoat layer should not cover the shut lines and black trim as strongly
     shader.fragmentShader = shader.fragmentShader.replace('#include <clearcoat_normal_fragment_begin>',
       '#include <clearcoat_normal_fragment_begin>');
