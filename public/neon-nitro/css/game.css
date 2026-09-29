@@ -2,6 +2,7 @@
 :root {
   --ink: #140818; --paper: #fff8ea; --pink: #ff2d6f; --cyan: #20d8ff; --yellow: #ffe23b; --purple: #8a3dff; --orange: #ff8a1e; --green: #56f06b;
   --bg: #0b0616; --panel: #1a1030; --comic: 'Bangers', 'Impact', 'Arial Black', sans-serif; --jp: 'Dela Gothic One', 'Hiragino Sans', 'Yu Gothic', sans-serif;
+  --jp-small: 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', 'Yu Gothic UI', 'Yu Gothic', 'Meiryo', 'Noto Sans CJK JP', 'Noto Sans JP', 'Dela Gothic One', sans-serif;
   --ui: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --safe-l: env(safe-area-inset-left, 0px); --safe-r: env(safe-area-inset-right, 0px); --safe-t: env(safe-area-inset-top, 0px); --safe-b: env(safe-area-inset-bottom, 0px);
 }
@@ -145,7 +146,7 @@ body.touch #hud .hud-map { left: auto; right: calc(180px + var(--safe-r)); top: 
 .halftone { background-image: radial-gradient(rgba(255,255,255,.07) 1.4px, transparent 1.5px); background-size: 9px 9px; }
 .topbar { display: flex; align-items: center; gap: 12px; min-height: 52px; }
 .topbar h1 { margin: 0; font-family: var(--comic); font-weight: normal; letter-spacing: 2px; font-size: 44px; transform: skew(-8deg); text-shadow: 3px 3px 0 var(--ink), 0 0 18px rgba(255,45,111,.5); }
-.topbar h1 small { font-family: var(--jp); font-size: .45em; color: var(--pink); margin-left: 10px; letter-spacing: 0; }
+.topbar h1 small { font-family: var(--jp-small); font-weight: 800; font-size: .45em; color: var(--pink); margin-left: 10px; letter-spacing: 0; }
 .topbar .spacer { flex: 1; }
 .money { font-family: var(--comic); font-size: 28px; letter-spacing: 1px; background: var(--yellow); color: var(--ink); padding: 2px 16px 0 10px; border: 4px solid var(--ink); border-radius: 12px; box-shadow: 4px 4px 0 var(--ink); display: flex; align-items: center; gap: 6px; transform: skew(-6deg); white-space: nowrap; }
 .money svg { width: 28px; height: 28px; }
@@ -161,12 +162,12 @@ body.touch #hud .hud-map { left: auto; right: calc(180px + var(--safe-r)); top: 
 .btn.back { background: #cfc6ff; }
 .menu-main { display: flex; flex-direction: column; gap: 14px; align-items: flex-start; margin-top: auto; margin-bottom: auto; padding-left: 6px; }
 .menu-main .btn { font-size: 40px; min-width: 300px; text-align: left; }
-.menu-main .btn .jp { font-family: var(--jp); font-size: .45em; margin-left: 10px; opacity: .7; }
+.menu-main .btn .jp { font-family: var(--jp-small); font-weight: 800; font-size: .45em; margin-left: 10px; opacity: .7; }
 .menu-main .btn.primary { background: var(--pink); color: #fff; text-shadow: 2px 2px 0 var(--ink); font-size: 48px; }
 .menu-main .btn.primary:hover, .menu-main .btn.primary.focus { background: var(--yellow); color: var(--ink); text-shadow: none; }
 .carinfo { position: absolute; right: calc(22px + var(--safe-r)); bottom: calc(18px + var(--safe-b)); text-align: right; font-family: var(--comic); letter-spacing: 1px; }
 .carinfo .nm { font-size: 42px; transform: skew(-8deg); text-shadow: 3px 3px 0 var(--ink); }
-.carinfo .nm .jp { font-family: var(--jp); color: var(--pink); margin-right: 10px; font-size: .8em; }
+.carinfo .nm .jp { font-family: var(--jp-small); font-weight: 800; color: var(--pink); margin-right: 10px; font-size: .8em; }
 .carinfo .sub { color: #cfc6ff; font-size: 18px; }
 
 /* title */
@@ -184,7 +185,7 @@ body.touch #hud .hud-map { left: auto; right: calc(180px + var(--safe-r)); top: 
 .card:nth-child(2n) { --r: 1.5deg; }
 .card:hover, .card.focus { transform: rotate(0) scale(1.05); background: #fff; z-index: 2; }
 .card h2 { margin: 0; font-family: var(--comic); font-weight: normal; font-size: 36px; letter-spacing: 1px; line-height: 1; }
-.card .jp { font-family: var(--jp); color: var(--pink); font-size: 18px; }
+.card .jp { font-family: var(--jp-small); font-weight: 800; color: var(--pink); font-size: 18px; }
 .card p { font-size: 14px; line-height: 1.35; margin: 8px 0 0; }
 .card .badge { position: absolute; top: -14px; right: -12px; background: var(--pink); color: #fff; font-family: var(--comic); font-size: 20px; letter-spacing: 1px; padding: 2px 12px; border: 3px solid var(--ink); border-radius: 10px; transform: rotate(6deg); text-shadow: 2px 2px 0 var(--ink); }
 .card.locked { filter: grayscale(.8) brightness(.7); cursor: not-allowed; }
@@ -211,7 +212,7 @@ body.touch #hud .hud-map { left: auto; right: calc(180px + var(--safe-r)); top: 
 .g-cars { display: flex; gap: 6px; padding: 10px; background: rgba(0,0,0,.25); }
 .g-cars button { flex: 1; font-family: var(--comic); font-size: 18px; letter-spacing: .5px; border: 3px solid var(--ink); border-radius: 10px; background: #2d2150; color: #fff; padding: 6px 4px 3px; box-shadow: 2px 2px 0 var(--ink); }
 .g-cars button.on { background: var(--pink); }
-.g-cars button .jp { font-family: var(--jp); display: block; font-size: 16px; }
+.g-cars button .jp { font-family: var(--jp-small); font-weight: 800; display: block; font-size: 20px; }
 .g-cars button.locked { opacity: .6; }
 .g-tabs { display: flex; flex-wrap: wrap; gap: 5px; padding: 8px 10px; border-bottom: 3px solid rgba(255,255,255,.08); }
 .g-tabs button { font-family: var(--comic); font-size: 17px; letter-spacing: .6px; border: 3px solid var(--ink); border-radius: 9px; background: #fff; color: var(--ink); padding: 4px 10px 1px; box-shadow: 2px 2px 0 var(--ink); }

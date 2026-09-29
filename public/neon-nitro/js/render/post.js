@@ -16,7 +16,7 @@ uniform sampler2D tDepth;
 uniform sampler2D tBloom;
 uniform vec2 uTexel;
 uniform float uNear, uFar;
-uniform float uEdge, uEdgeWidth, uEdgeFade, uCrease;
+uniform float uEdge, uEdgeWidth, uEdgeFade, uCrease, uCreaseFade;
 uniform vec3 uInk;
 uniform float uBloom;
 uniform float uSpeed;
@@ -35,6 +35,10 @@ float hash11(float p) { p = fract(p * 0.1031); p *= p + 33.33; p *= p + p; retur
 
 uniform vec2 uTanFov;
 vec3 viewPos(vec2 uv, float z) { return vec3((uv * 2.0 - 1.0) * uTanFov * z, -z); }
+float viewZi(ivec2 p) {
+  return -perspectiveDepthToViewZ(texelFetch(tDepth, p, 0).x, uNear, uFar);
+}
+vec3 viewPosI(ivec2 p, float z) { return viewPos((vec2(p) + 0.5) * uTexel, z); }
 float viewZ(vec2 uv) {
   float d = texture2D(tDepth, uv).x;
   return -perspectiveDepthToViewZ(d, uNear, uFar);
@@ -56,25 +60,27 @@ void main() {
   }
 
   // ---- ink outlines: silhouettes from depth ratio, creases from the bend
-  // angle between view-space position deltas (scale-independent)
+  // angle between view-space position deltas (scale-independent). Exact
+  // texel fetches keep reconstructed positions consistent with the depth.
   if (uEdge > 0.0) {
-    vec2 k = uTexel * uEdgeWidth;
-    float z0 = viewZ(uv);
-    float zl = viewZ(uv - vec2(k.x, 0.0));
-    float zr = viewZ(uv + vec2(k.x, 0.0));
-    float zu = viewZ(uv + vec2(0.0, k.y));
-    float zd = viewZ(uv - vec2(0.0, k.y));
+    ivec2 pc = ivec2(gl_FragCoord.xy);
+    ivec2 mx = ivec2(textureSize(tDepth, 0)) - 1;
+    int k = int(uEdgeWidth + 0.5);
+    ivec2 pl = clamp(pc - ivec2(k, 0), ivec2(0), mx), pr = clamp(pc + ivec2(k, 0), ivec2(0), mx);
+    ivec2 pu = clamp(pc + ivec2(0, k), ivec2(0), mx), pd = clamp(pc - ivec2(0, k), ivec2(0), mx);
+    float z0 = viewZi(pc);
+    float zl = viewZi(pl), zr = viewZi(pr), zu = viewZi(pu), zd = viewZi(pd);
     float zmax = max(max(zl, zr), max(zu, zd));
     float zmin = min(min(zl, zr), min(zu, zd));
     float sil = max(smoothstep(1.06, 1.2, zmax / z0), smoothstep(0.94, 0.83, zmin / z0));
-    vec3 P0 = viewPos(uv, z0);
-    vec3 a = P0 - viewPos(uv - vec2(k.x, 0.0), zl);
-    vec3 b = viewPos(uv + vec2(k.x, 0.0), zr) - P0;
-    vec3 c = P0 - viewPos(uv - vec2(0.0, k.y), zd);
-    vec3 d = viewPos(uv + vec2(0.0, k.y), zu) - P0;
+    vec3 P0 = viewPosI(pc, z0);
+    vec3 a = P0 - viewPosI(pl, zl);
+    vec3 b = viewPosI(pr, zr) - P0;
+    vec3 c = P0 - viewPosI(pd, zd);
+    vec3 d = viewPosI(pu, zu) - P0;
     float cx = dot(normalize(a), normalize(b));
     float cy = dot(normalize(c), normalize(d));
-    float crease = smoothstep(uCrease + 0.04, uCrease - 0.04, min(cx, cy));
+    float crease = smoothstep(uCrease + 0.04, uCrease - 0.04, min(cx, cy)) * (1.0 - smoothstep(uCreaseFade * 0.6, uCreaseFade, z0));
     float edge = max(crease, sil);
     float fade = 1.0 - smoothstep(uEdgeFade * 0.35, uEdgeFade, z0);
     if (z0 > uFar * 0.98) fade = 0.0;
@@ -176,7 +182,7 @@ export class Post {
     this.composite = fsMaterial(COMPOSITE_FRAG, {
       tColor: { value: null }, tDepth: { value: null }, tBloom: { value: null },
       uTexel: { value: new THREE.Vector2() }, uNear: { value: 0.1 }, uFar: { value: 1000 },
-      uEdge: { value: 1 }, uEdgeWidth: { value: 1 }, uEdgeFade: { value: 300 }, uCrease: { value: 0.8 }, uTanFov: { value: new THREE.Vector2(1, 1) },
+      uEdge: { value: 1 }, uEdgeWidth: { value: 1 }, uEdgeFade: { value: 300 }, uCrease: { value: 0.8 }, uCreaseFade: { value: 600 }, uTanFov: { value: new THREE.Vector2(1, 1) },
       uInk: { value: new THREE.Color(0.05, 0.02, 0.09) },
       uBloom: { value: 0.9 }, uSpeed: { value: 0 }, uTime: { value: 0 }, uAspect: { value: 1 },
       uFlashColor: { value: new THREE.Color(1, 1, 1) }, uFlash: { value: 0 }, uAberr: { value: 0 },

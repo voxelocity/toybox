@@ -67,6 +67,12 @@ export class AIDriver {
         this.avoid += ((c.lat ?? 0) > (v.lat ?? 0) ? -1 : 1) * 3.5 * dt * 4;
       }
     }
+    // moving obstacles (traffic, boulders, crane drops)
+    for (const m of tr.movers || []) {
+      if (m.active === false) continue;
+      const ds = path.delta(v.s, m.s);
+      if (ds > 2 && ds < 45 && Math.abs(m.lat - latT) < (m.r || 2) + 2.2) this.avoid = (m.lat > latT ? -1 : 1) * ((m.r || 2) + 3.5);
+    }
     latT += this.avoid;
     // hazard lanes defined by the track (e.g. level crossing gates)
     if (tr.aiLaneBias) latT += tr.aiLaneBias(v.s, latT) || 0;
@@ -120,6 +126,8 @@ export class AIDriver {
     const canDrift = this.skill > 0.2;
     inp.throttle = 1; inp.brake = 0;
     if (spd > vCorner * (canDrift ? 1.35 : 1.1) + 4) { inp.throttle = 0; if (spd > vCorner * 1.55 + 8) inp.brake = 0.6; }
+    const hazLim = tr.aiSpeedLimit ? tr.aiSpeedLimit(v.s, v) : Infinity;
+    if (spd > hazLim) { inp.throttle = 0; inp.brake = spd > hazLim + 4 ? 1 : 0.4; inp.drift = false; }
     // recovery: back out for a moment when wedged against something
     if (this.recoverT > 0) {
       this.recoverT -= dt;

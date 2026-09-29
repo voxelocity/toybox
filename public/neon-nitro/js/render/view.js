@@ -13,7 +13,8 @@ export const isTouch = typeof window !== 'undefined' && (('ontouchstart' in wind
 export class View {
   constructor(canvas) {
     this.canvas = canvas;
-    const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', stencil: false, depth: true, preserveDrawingBuffer: false });
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', stencil: false, depth: true, preserveDrawingBuffer: false, reversedDepthBuffer: true });
+    this.reversedZ = renderer.capabilities.reversedDepthBuffer === true;
     renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
     renderer.toneMapping = THREE.NoToneMapping;
     renderer.autoClear = true;
@@ -21,6 +22,8 @@ export class View {
     renderer.info.autoReset = true;
     this.renderer = renderer;
     this.post = new Post(renderer);
+    // without reversed-Z, depth precision is too coarse far away for crease inking
+    this.post.fx.uCreaseFade.value = this.reversedZ ? 600 : 50;
     this.qualityName = 'high';
     this.q = QUALITY.high;
     this.dynScale = 1;

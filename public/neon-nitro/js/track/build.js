@@ -98,7 +98,7 @@ export function buildRoad(track, chunks) {
     g.quad(P(i, -hw0), P(i, hw0), P(j, hw1), P(j, -hw1));
     // ---- markings
     const dash = ((i / step) % 6) < 3;
-    g.set(line, 0, 0.35);
+    g.set(line, 0, 0.15);
     // edge lines
     for (const sgn of [-1, 1]) {
       const a = sgn * (hw0 - 0.55), b = sgn * (hw0 - 0.35), a1 = sgn * (hw1 - 0.55), b1 = sgn * (hw1 - 0.35);
@@ -111,7 +111,7 @@ export function buildRoad(track, chunks) {
         const t = -1 + (2 * l) / nl;
         const lat0 = t * (hw0 - 0.5), lat1 = t * (hw1 - 0.5);
         const isCenter = nl % 2 === 0 && l === nl / 2 && theme.centerLine;
-        g.set(isCenter ? center : line, 0, 0.35);
+        g.set(isCenter ? center : line, 0, 0.15);
         g.quad(P(i, lat0 - 0.12, 0.012), P(i, lat0 + 0.12, 0.012), P(j, lat1 + 0.12, 0.012), P(j, lat1 - 0.12, 0.012));
       }
     }

@@ -159,7 +159,7 @@ export function streetLamp(sinks, x, y, z, tx, tz, o = {}) {
   const lc = rgb(o.light || '#ffd9a0');
   g.set(lc, 0, 1);
   g.box(ex, y + H + 0.15, ez, 0.8, 0.18, 0.8);
-  if (glow) groundGlow(glow, ex + tx * 1.5, (o.groundY ?? y) + 0.06, ez + tz * 1.5, o.pool ?? 6.5, mix(lc, [0, 0, 0], 0.72));
+  if (glow) groundGlow(glow, ex + tx * 1.5, (o.groundY ?? y) + 0.06, ez + tz * 1.5, o.pool ?? 6.5, mix(lc, [0, 0, 0], 1 - (o.poolK ?? 0.3)));
 }
 
 /** Utility pole + crossbar; returns top attachment point for wires. */

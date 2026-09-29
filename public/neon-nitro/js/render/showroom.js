@@ -141,7 +141,8 @@ export class Showroom {
   /** frame: 'menu' puts the car right of the buttons; 'garage' right of the panel */
   frame(kind) {
     this.kind = kind;
-    this.dist = kind === 'garage' ? 10.5 : kind === 'title' ? 12 : 10;
+    this.dist = kind === 'garage' ? 10.5 : kind === 'title' ? 13 : 10;
+    if (kind === 'title') this.pitch = 0.12;
   }
 
   update(dt) {
@@ -157,7 +158,8 @@ export class Showroom {
     const tx = 0, ty = 0.75, tz = 0;
     this.camera.position.set(tx + Math.sin(this.yaw) * Math.cos(this.pitch) * d, ty + Math.sin(this.pitch) * d, tz + Math.cos(this.yaw) * Math.cos(this.pitch) * d);
     this.camera.lookAt(tx, ty, tz);
-    this.camera.setViewOffset(w, h, shift * w, (this.kind === 'garage' ? 0.06 : 0) * h, w, h);
+    const vy = this.kind === 'garage' ? 0.06 : this.kind === 'title' ? -0.26 : 0;
+    this.camera.setViewOffset(w, h, shift * w, vy * h, w, h);
     this.camera.updateProjectionMatrix();
     if (this.car) {
       const len = this.car.dims.length || 4.4;
