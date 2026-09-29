@@ -154,6 +154,7 @@ export class Race {
         if (this.finishT > 6.5 || this.cars.every((c) => c.finished) && this.finishT > 3) this._results();
       }
     }
+    this._ambient(dt);
     this.fx.update(dt, this.camera);
     this.hud.update(dt);
     // post fx
@@ -169,6 +170,24 @@ export class Race {
     f.uGlitch.value = Math.max(glitchMe ? 0.8 : 0, this.glitchFlash * 0.4);
     f.uAberr.value = Math.max(this.focus * 1.5, glitchMe ? 2 : 0, boosting ? 0.6 : 0);
     f.uFlash.value = Math.max(0, f.uFlash.value - dt * 3);
+  }
+
+  /** Weather / atmosphere particles around the camera (petals, rain, embers). */
+  _ambient(dt) {
+    const a = this.track.def.ambient;
+    if (!a || this.view.qualityName === 'low' && a.kind === 'rain') return;
+    this._ambAcc = (this._ambAcc || 0) + dt * a.rate * (this.view.qualityName === 'low' ? 0.4 : 1);
+    const cam = this.camera.position;
+    const fx = this.fx;
+    const vel = this.player?.vel || { x: 0, z: 0 };
+    while (this._ambAcc >= 1) {
+      this._ambAcc -= 1;
+      const r = 6 + Math.random() * 38, ang = Math.random() * Math.PI * 2;
+      const x = cam.x + Math.cos(ang) * r + vel.x * 0.6, z = cam.z + Math.sin(ang) * r + vel.z * 0.6;
+      if (a.kind === 'rain') fx.spawn({ x, y: cam.y + 8 + Math.random() * 10, z, vx: -2, vy: -46, vz: 1, life: 0.5, size: 1.6, color: [0.75, 0.95, 1], alpha: 0.55, shape: SHAPE.RAIN, drag: 0, rot: 0.15 });
+      else if (a.kind === 'petals') fx.spawn({ x, y: cam.y + 4 + Math.random() * 10, z, vx: 1.5 + Math.random() * 2, vy: -1.6, vz: Math.random() - 0.5, life: 5, size: 0.35, color: a.color || [1, 0.7, 0.85], alpha: 0.95, shape: SHAPE.SQUARE, drag: 0.1, spin: 3 });
+      else if (a.kind === 'embers') fx.spawn({ x, y: cam.y - 4 + Math.random() * 6, z, vx: Math.random() - 0.5, vy: 1.5 + Math.random() * 2, vz: Math.random() - 0.5, life: 3, size: 0.3, color: a.color || [0.4, 1, 0.9], alpha: 0.9, shape: SHAPE.DOT, drag: 0.2 });
+    }
   }
 
   _introCam(dt) {

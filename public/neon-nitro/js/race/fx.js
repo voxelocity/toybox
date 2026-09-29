@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 
 const MAX = 2400;
-export const SHAPE = { PUFF: 0, STAR: 1, FLAME: 2, SQUARE: 3, RING: 4, DOT: 5 };
+export const SHAPE = { PUFF: 0, STAR: 1, FLAME: 2, SQUARE: 3, RING: 4, DOT: 5, RAIN: 6 };
 
 const VERT = /* glsl */`
 attribute float aSize;
@@ -57,6 +57,9 @@ void main() {
   } else if (sh == 4) {     // ring
     if (r > 1.0 || r < 0.72) discard;
     if (r > 0.92) col = ink;
+  } else if (sh == 6) {     // rain streak
+    if (abs(p.x) > 0.08 + (1.0 - abs(p.y)) * 0.04) discard;
+    a *= 0.8;
   } else {                  // soft dot (sparkles, glows)
     if (r > 1.0) discard;
     a *= smoothstep(1.0, 0.0, r);
