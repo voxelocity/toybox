@@ -17,6 +17,8 @@ export default {
   name: 'Kaiju Harbor',
   jp: '怪獣港',
   laps: 3,
+  // flat city streets: banking would sink the inside edge under the ground/dock slabs
+  maxBank: 0.02,
   width: 20,
   music: 'dnb',
   seed: 5150,

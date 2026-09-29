@@ -11,8 +11,8 @@ const B = { w: 512, h: 224, cols: 4, rows: 2, y: 1600 };
 export const H_TEXT = [
   'ラーメン', 'カラオケ', 'ゲーム', '寿司', '居酒屋', 'ホテル', 'パチンコ', '電気', 'ネオン', 'タクシー',
   '薬', 'コーヒー', 'NITRO', 'KAIJU', 'OPEN 24H', 'BAR', 'CYBER', 'アニメ', 'たこ焼き', 'ロボット',
-  '東京', '未来', '夜', 'SUSHI', 'NEO TOKYO', '焼肉', '本屋', 'マンガ', '酒', 'ドリフト',
-  'ARCADE', '喫茶', 'HOTEL', '電脳', 'RAMEN', '牛丼', 'DENKI', 'ネコ', '宇宙', 'NOODLE',
+  '東京', '未来', '夜', 'メイド', 'NEO TOKYO', '焼肉', '本屋', 'マンガ', '酒', 'ドリフト',
+  'ARCADE', '喫茶', 'HOTEL', '電脳', 'RAMEN', '牛丼', 'DENKI', 'ネコ', '宇宙', 'ガチャ',
 ];
 export const V_TEXT = ['居酒屋', 'ラーメン', 'カラオケ', '焼鳥', '漫画喫茶', '電脳', '夜の街', '銭湯', '走り屋', '新宿', '渋谷', '秋葉原', 'ホテル', '寿司', '麻雀', 'スナック', '鬼', '龍', '風', '雷', '夢'];
 const NEON = ['#ff2d6f', '#20d8ff', '#ffe23b', '#56f06b', '#ff8a1e', '#c93dff', '#ff5ccf', '#2a8cff', '#ffffff'];
@@ -126,7 +126,7 @@ export function signAtlas() {
     const neon = NEON[Math.floor(r() * NEON.length)];
     const bgi = Math.floor(r() * BG.length);
     const bg = BG[bgi];
-    const solid = bgi >= 5;
+    const solid = bgi >= 5 && bgi <= 8; // dark #111216 panels get neon text
     panel(ctx, x, y, H.w, H.h, bg, solid ? '#140818' : neon);
     const isJp = /[^\x00-\x7f]/.test(t);
     const size = Math.min(isJp ? 60 : 64, (H.w - 30) / Math.max(1, [...t].length) * (isJp ? 1 : 1.7));
@@ -140,7 +140,7 @@ export function signAtlas() {
     const neon = NEON[Math.floor(r() * NEON.length)];
     const bgi = Math.floor(r() * BG.length);
     const bg = BG[bgi];
-    const solid = bgi >= 5;
+    const solid = bgi >= 5 && bgi <= 8; // dark #111216 panels get neon text
     panel(ctx, x, y, V.w, V.h, bg, solid ? '#140818' : neon, 8);
     const n = [...t].length;
     const size = Math.min(70, (V.h - 30) / n / 1.05);

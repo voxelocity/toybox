@@ -56,8 +56,9 @@ function step(dt) {
   Object.assign(v.input, auto ? autopilot() : inp);
   v.update(dt);
   track.update(dt, t, null);
-  chase.update(dt, v, { lookBack: inp.look });
+  if (!freeCam) chase.update(dt, v, { lookBack: inp.look });
 }
+let freeCam = null;
 function loop() {
   const now = performance.now();
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
@@ -70,6 +71,7 @@ loop();
 await import("./_probe.js");
 // headless helpers
 window.__sim = (seconds, dt = 1 / 60) => { for (let k = 0; k < seconds / dt; k++) step(dt); return { s: v.s, speed: v.speed, lat: v.lat }; };
+window.__cam = (pos, look, fov = 70) => { freeCam = { pos, look }; cam.position.set(...pos); cam.lookAt(...look); cam.fov = fov; cam.updateProjectionMatrix(); };
 window.__v = v; window.__track = track; window.__view = view; window.__ready = true;
 </script>
 </body>

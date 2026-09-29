@@ -89,14 +89,15 @@ export function building(sinks, x, z, fx, fz, o) {
     const c = Math.cos(ang), s = Math.sin(ang);
     const L = (lx, ly, lz) => [x + lx * c + lz * s, y + ly, z - lx * s + lz * c];
     const nx = fx, nz = fz;
-    if (o.storefront !== false) addSign(sg, L(0.34, shopH - 0.55, 0), nx, nz, Math.min(w * 0.7, 6), 1.3, signUV('h', Math.floor(r() * SIGN_COUNTS.h)), 1);
+    const pick = (list, n) => (list && r() < 0.75 ? list[Math.floor(r() * list.length)] : Math.floor(r() * n));
+    if (o.storefront !== false) addSign(sg, L(0.34, shopH - 0.55, 0), nx, nz, Math.min(w * 0.7, 6), 1.3, signUV('h', pick(o.hSigns, SIGN_COUNTS.h)), 1);
     // vertical projecting signs
     if (h > 10 && r() < (o.vertChance ?? 0.75)) {
       const side = r() < 0.5 ? -1 : 1;
       const vz = side * (w / 2 - 0.8);
       const vh = Math.min(h - shopH - 2, 7 + r() * 5);
       const vy = shopH + 1 + vh / 2;
-      const uv = signUV('v', Math.floor(r() * SIGN_COUNTS.v));
+      const uv = signUV('v', pick(o.vSigns, SIGN_COUNTS.v));
       // perpendicular to facade: facing along +-z local
       const px = 1.1;
       const P = L(px, vy, vz);

@@ -400,12 +400,15 @@ export function drawbridge(track, u, len = 26, o = {}) {
 }
 
 // ------------------------------------------------------------------ rolling hazards
-function ballModel(kind) {
+function ballModel(kind, color) {
   const g = new Geo();
   if (kind === 'gacha') {
-    g.set([1, 0.35, 0.6], 0, 0.1); g.sphere(0, 0, 0, 1.6, 1.6, 1.6, 12, 6);
-    g.set([0.95, 0.95, 1], 0, 0.1);
-    g.set([1, 1, 1], 0, 0.2); g.sphere(0, 0.02, 0, 1.62, 0.2, 1.62, 12, 3);
+    // two-tone capsule: coloured cap, white base, dark seam band
+    const R = 1.6, n = 6;
+    const half = (sgn) => { const pr = []; for (let k = 0; k <= n; k++) { const a = (k / n) * Math.PI / 2; pr.push([Math.cos(a) * R, sgn * Math.sin(a) * R]); } return sgn > 0 ? pr : pr.reverse(); };
+    g.set(rgb(color || '#ff5ccf'), 0, 0.15); g.lathe(half(1).map(([r, x]) => [r, x + 0.02]).reverse(), 12);
+    g.set([0.96, 0.96, 1], 0, 0.05); g.lathe(half(-1).map(([r, x]) => [r, x - 0.02]).reverse(), 12);
+    g.set([0.12, 0.1, 0.16], 0, 0); g.cyl([-0.08, 0, 0], [0.08, 0, 0], R * 1.01, R * 1.01, 12, false);
   } else {
     g.set([0.5, 0.44, 0.5], 0, 0); g.sphere(0, 0, 0, 1.7, 1.5, 1.6, 7, 5);
     g.set([0.38, 0.33, 0.4], 0, 0); g.sphere(0.6, 0.5, 0.3, 0.9, 0.8, 0.9, 5, 4);
@@ -416,8 +419,8 @@ function ballModel(kind) {
 /** Boulders / capsules rolling across or along the road on a cycle. */
 export function rollers(track, spots, o = {}) {
   const path = track.path;
-  const list = spots.map(([u, dir, off]) => {
-    const m = ballModel(o.kind || 'rock');
+  const list = spots.map(([u, dir, off], k) => {
+    const m = ballModel(o.kind || 'rock', o.colors?.[k % o.colors.length]);
     track.group.add(m);
     return { m, s0: u * path.length, dir, off: off ?? 0, s: 0, lat: 0, x: 0, z: 0, active: false };
   });
@@ -447,10 +450,12 @@ export function rollers(track, spots, o = {}) {
   });
 }
 
-// ------------------------------------------------------------------ laser gates
+// ------------------------------------------------------------------ laser gates / boom barriers
+/** Gates that block one half of the road at a time. o.style: 'laser' | 'boom' (car park barrier arms). */
 export function laserGates(track, spots, o = {}) {
   const path = track.path;
   const list = [];
+  const boom = o.style === 'boom';
   for (const [u, off] of spots) {
     const s = u * path.length;
     const i = path.indexAt(s);
@@ -458,12 +463,38 @@ export function laserGates(track, spots, o = {}) {
     const F = frame(track, s);
     // posts
     const g = new Geo();
-    g.set(rgb('#2a2440'), 0, 0);
-    for (const side of [-1, 1]) { const P = frame(track, s, side * (W + 0.3)); g.box(P.x, P.y + 2, P.z, 0.8, 4, 0.8); g.set(rgb('#ff2d6f'), 0, 1); g.box(P.x, P.y + 4.1, P.z, 0.9, 0.2, 0.9); g.set(rgb('#2a2440'), 0, 0); }
+    for (const side of [-1, 1]) {
+      const P = frame(track, s, side * (W + 0.3));
+      if (boom) {
+        g.set(rgb('#ffd23f'), 0, 0); g.box(P.x, P.y + 0.6, P.z, 1.1, 1.2, 1.1);
+        g.set(rgb('#2a2440'), 0, 0); g.box(P.x, P.y + 1.35, P.z, 0.9, 0.3, 0.9);
+        g.set(rgb('#ff2d6f'), 0, 1); g.sphere(P.x, P.y + 1.75, P.z, 0.22, 0.22, 0.22, 6, 4);
+      } else {
+        g.set(rgb('#2a2440'), 0, 0); g.box(P.x, P.y + 2, P.z, 0.8, 4, 0.8);
+        g.set(rgb('#ff2d6f'), 0, 1); g.box(P.x, P.y + 4.1, P.z, 0.9, 0.2, 0.9);
+      }
+      track.addCircle(P.x, P.z, 0.6, { tag: 'post' });
+    }
     track.group.add(mesh(g));
-    // beams: half the road at a time (alternating sides)
     const beams = [];
     for (const half of [-1, 1]) {
+      if (boom) {
+        // striped arm on a pivot at the post; rotates up about the road tangent
+        const ag = new Geo();
+        for (let k = 0; k < 6; k++) {
+          ag.set(k % 2 ? rgb('#ff2d6f') : rgb('#f4f4ff'), 0, k % 2 ? 0.35 : 0.1);
+          ag.box(0, 0, -half * (k + 0.5) * (W / 6), 0.22, 0.3, W / 6);
+        }
+        const P = frame(track, s, half * (W + 0.3));
+        const pivot = new THREE.Group();
+        pivot.position.set(P.x, P.y + 1.15, P.z);
+        pivot.rotation.order = 'YXZ';
+        pivot.rotation.y = F.ang;
+        pivot.add(mesh(ag));
+        track.group.add(pivot);
+        beams.push({ half, pivot, a: 1.4 });
+        continue;
+      }
       const bm = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.25, W), new THREE.MeshBasicMaterial({ color: half < 0 ? 0xff2050 : 0x20e8ff }));
       const P = frame(track, s, half * W / 2);
       bm.position.set(P.x, P.y + 1.0, P.z);
@@ -479,15 +510,25 @@ export function laserGates(track, spots, o = {}) {
     for (const g of list) {
       const ph = ((t + g.off) % period) / period;
       const onHalf = ph < 0.5 ? -1 : 1;
-      const flicker = ph % 0.5 > 0.42;
-      for (const b of g.beams) { const on = b.half === onHalf && !flicker; b.meshes.forEach((m) => { m.visible = on; }); b.on = on; }
+      let flicker = ph % 0.5 > 0.42;
+      for (const b of g.beams) {
+        if (boom) {
+          const target = b.half === onHalf ? 0 : 1.4;
+          b.a += Math.max(-dt * 3.2, Math.min(dt * 3.2, target - b.a));
+          b.pivot.rotation.x = b.half * b.a;
+          b.on = b.a < 0.35;
+          continue;
+        }
+        const on = b.half === onHalf && !flicker; b.meshes.forEach((m) => { m.visible = on; }); b.on = on;
+      }
+      if (boom) flicker = !g.beams.some((b) => b.on && b.half === onHalf);
       g.onHalf = onHalf;
       if (!race) continue;
       for (const c of race.cars) {
         const ds = path.delta(g.s, c.s);
         if (Math.abs(ds) > 1.2) continue;
         const l = c.lat ?? 0;
-        if (!flicker && Math.sign(l || 1) === onHalf && Math.abs(l) > 0.5) race.hitCar(c, 'spin', null, 'BZZZT!');
+        if (!flicker && Math.sign(l || 1) === onHalf && Math.abs(l) > 0.5) race.hitCar(c, 'spin', null, boom ? 'BONK!' : 'BZZZT!');
       }
     }
   });

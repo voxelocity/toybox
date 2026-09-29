@@ -133,7 +133,7 @@ export function buildRoad(track, chunks) {
       g.set(col('deckSide', '#6a6480'), 0, 0);
       g.quad(P(i, l0, -d), P(i, l0 + 0.01, 0.0), P(j, l1 + 0.01, 0.0), P(j, l1, -d));
       g.quad(P(j, r1, -d), P(j, r1 - 0.01, 0.0), P(i, r0 - 0.01, 0.0), P(i, r0, -d));
-      if ((i / step) % 12 === 0 && !track.def.noPillars) {
+      if ((i / step) % 12 === 0 && !noPillarAt(track, i % N)) {
         const c = P(i, 0, -d);
         const pw = Math.min(3.2, hw0 * 0.35);
         g.set(col('pillar', '#8a84a0'), 0, 0);
@@ -145,6 +145,15 @@ export function buildRoad(track, chunks) {
     }
   }
   buildStartGantry(track, chunks, P, col);
+}
+
+/** def.noPillars: true, or [[u0, u1], ...] ranges where decks get no auto pillars. */
+function noPillarAt(track, i) {
+  const np = track.def.noPillars;
+  if (!np) return false;
+  if (np === true) return true;
+  const u = i / track.path.N;
+  return np.some(([a, b]) => u >= a && u <= b);
 }
 
 function buildEdge(g, chunks, track, e, sgn, i, j, hw0, hw1, P, col, tun) {

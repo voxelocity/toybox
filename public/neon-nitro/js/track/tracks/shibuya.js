@@ -11,6 +11,8 @@ export default {
   name: 'Shibuya Scramble',
   jp: '渋谷スクランブル',
   laps: 3,
+  // flat city streets: banking would sink the inside edge under the ground/dock slabs
+  maxBank: 0.02,
   width: 20,
   music: 'citypop',
   seed: 88,

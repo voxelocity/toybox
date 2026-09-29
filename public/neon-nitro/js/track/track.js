@@ -94,7 +94,7 @@ export class Track {
     if (this.theme.ground !== false && this.theme.groundColor) {
       const gm = new THREE.Mesh(new THREE.PlaneGeometry(6000, 6000), toonMaterial({ color: this.theme.groundColor, rim: 0 }));
       gm.rotation.x = -Math.PI / 2;
-      gm.position.y = (this.theme.groundY ?? 0) - 0.05;
+      gm.position.y = (this.theme.groundY ?? 0) - 0.35;
       this.group.add(gm);
     }
     if (def.setup) def.setup(this, scene);

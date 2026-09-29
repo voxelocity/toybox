@@ -7,7 +7,8 @@ import { Geo } from '../../geo/builder.js';
 
 /**
  * opts: {
- *   palette: [facade colours], hMin, hMax, gaps: [[u0,u1,side?]], lamps: true, poles: true,
+ *   palette: [facade colours], hMin, hMax, gaps: [[u0,u1,side?]], lamps: true, noLamps: [[u0,u1]], poles: true,
+ *   hSigns / vSigns: preferred sign atlas cells,
  *   intersections: [u], footbridges: [u], skyline: {...}, setback: metres, landmark: {x,z}
  * }
  */
@@ -58,6 +59,7 @@ export function cityDressing(track, chunks, rng, o = {}) {
       building(sinks, P.px, P.pz, fx, fz, {
         w: front, d: depth, h, color: pal[Math.floor(rng() * pal.length)], rng, y: Math.min(baseY, P.py),
         vertChance: o.vertChance ?? 0.8, boardChance: o.boardChance ?? 0.4, storefront: o.storefront ?? true,
+        hSigns: o.hSigns, vSigns: o.vSigns, shopGlow: o.shopGlow,
       });
       track.addBox(P.px - fx * depth / 2, P.pz - fz * depth / 2, depth / 2, front / 2, Math.atan2(-fz, fx), { tag: 'building' });
       s += front + rng() * 1.2;
@@ -78,7 +80,8 @@ export function cityDressing(track, chunks, rng, o = {}) {
       const k = Math.round(s / 13);
       const sinks = { world: chunks.W(s), signs: chunks.S(s), glow: chunks.L(s) };
       const lift = e.lift || 0;
-      if (o.lamps !== false && (k + (side > 0 ? 1 : 0)) % 2 === 0) {
+      const noLamp = (o.noLamps || []).some(([a, b]) => u >= a && u <= b);
+      if (o.lamps !== false && !noLamp && (k + (side > 0 ? 1 : 0)) % 2 === 0) {
         const P = path.point(s, side * (hw + 0.7));
         const lc = o.lampColor || (k % 4 === 0 ? '#ffd9a0' : '#bfe8ff');
         streetLamp(sinks, P.px, P.py + lift, P.pz, -side * P.rx, -side * P.rz, { light: lc, groundY: P.py, pool: 7 });
