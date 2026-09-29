@@ -220,6 +220,7 @@ export class Post {
     const r = this.renderer;
     r.setRenderTarget(this.rtMain);
     r.render(scene, camera);
+    this.stats = { calls: r.info.render.calls, tris: r.info.render.triangles };
     const bloom = this.bloomOn && this.fx.uBloom.value > 0;
     if (bloom) {
       this.bright.uniforms.tColor.value = this.rtMain.texture;

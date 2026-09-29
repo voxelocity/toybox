@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Neon Nitro drive test</title>
+<link rel="stylesheet" href="../css/fonts.css">
+<style>html,body{margin:0;height:100%;background:#000;overflow:hidden}canvas{display:block}#i{position:fixed;left:6px;top:6px;color:#fff;font:13px monospace;text-shadow:0 1px 2px #000;white-space:pre}</style>
+<script type="importmap">{"imports":{"three":"/vendor/three/build/three.module.js","three/addons/":"/vendor/three/examples/jsm/"}}</script>
+</head>
+<body>
+<canvas id="c"></canvas><div id="i"></div>
+<script type="module">
+import * as THREE from 'three';
+import { View } from '../js/render/view.js';
+import { G } from '../js/render/toon.js';
+import { CarModel } from '../js/cars/car.js';
+import { defaultConfig, statsFor } from '../js/cars/catalog.js';
+import { Track } from '../js/track/track.js';
+import { Vehicle } from '../js/race/vehicle.js';
+import { ChaseCam } from '../js/race/camera.js';
+import { Input } from '../js/core/input.js';
+try { await Promise.all([document.fonts.load('40px Bangers'), document.fonts.load('40px "Dela Gothic One"', '風')]); } catch {}
+const q = new URLSearchParams(location.search);
+const tid = q.get('t') || 'shibuya';
+const def = (await import(`../js/track/tracks/${tid}.js`)).default;
+const view = new View(document.getElementById('c'));
+view.setQuality(q.get('q') || 'high', false);
+const scene = new THREE.Scene();
+const cam = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.3, 2400);
+view.camera = cam; view.resize();
+const t0 = performance.now();
+const track = new Track(def).build(scene);
+const buildMs = performance.now() - t0;
+const cfg = defaultConfig(q.get('body') || 'kaze');
+const model = new CarModel(cfg);
+scene.add(model.root);
+const v = new Vehicle({ id: 0, model, stats: statsFor(cfg), cfg, track, isPlayer: true });
+v.place0(+(q.get('s') || 0), 0);
+const chase = new ChaseCam(cam);
+const input = new Input();
+const auto = q.has('auto');
+let t = 0, last = performance.now();
+const info = document.getElementById('i');
+function autopilot() {
+  const p = track.path;
+  const look = p.at(v.s + 14 + v.speed * 0.5);
+  const dx = look.x - v.pos.x, dz = look.z - v.pos.z;
+  let e = Math.atan2(-dz, dx) - v.yaw;
+  while (e > Math.PI) e -= Math.PI * 2; while (e < -Math.PI) e += Math.PI * 2;
+  return { steer: Math.max(-1, Math.min(1, -e * 2.5)), throttle: 1, brake: 0, drift: false, driftPressed: false };
+}
+function step(dt) {
+  t += dt; G.uTime.value = t;
+  const inp = input.poll(dt);
+  Object.assign(v.input, auto ? autopilot() : inp);
+  v.update(dt);
+  track.update(dt, t, null);
+  chase.update(dt, v, { lookBack: inp.look });
+}
+function loop() {
+  const now = performance.now();
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  step(dt);
+  view.render(scene, cam, t);
+  info.textContent = `${tid} ${track.length.toFixed(0)}m build ${buildMs.toFixed(0)}ms  tris ${view.post.stats?.tris} calls ${view.post.stats?.calls}\nspeed ${(v.speed * 4.2).toFixed(0)} km/h  s ${v.s.toFixed(0)} lat ${(v.lat || 0).toFixed(1)} drift ${v.drift.on ? v.drift.level : '-'} boost ${v.boostT.toFixed(1)} surf ${v.surfNow}`;
+  requestAnimationFrame(loop);
+}
+loop();
+await import("./_probe.js");
+// headless helpers
+window.__sim = (seconds, dt = 1 / 60) => { for (let k = 0; k < seconds / dt; k++) step(dt); return { s: v.s, speed: v.speed, lat: v.lat }; };
+window.__v = v; window.__track = track; window.__view = view; window.__ready = true;
+</script>
+</body>
+</html>

@@ -206,7 +206,7 @@ void main() {
 #endif
   col += uEmissive;
 #ifdef USE_EMIT_ATTR
-  col = mix(col, vColor * uColor * 1.15, vEmit);
+  col = mix(col, albedo * 1.45, vEmit);
 #endif
   float dist = length(cameraPosition - vWorldPos);
   col = applyFog(col, dist);

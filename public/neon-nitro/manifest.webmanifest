@@ -1,0 +1,11 @@
+{
+  "name": "Neon Nitro",
+  "short_name": "Neon Nitro",
+  "description": "Cel-shaded neo-Tokyo arcade drift racer with power-ups and a tuner garage.",
+  "start_url": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#0b0616",
+  "theme_color": "#0b0616",
+  "icons": [{ "src": "assets/icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}

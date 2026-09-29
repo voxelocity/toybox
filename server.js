@@ -29,6 +29,7 @@ const TYPES = {
   '.woff2': 'font/woff2',
   '.ico': 'image/x-icon',
   '.txt': 'text/plain; charset=utf-8',
+  '.webmanifest': 'application/manifest+json',
 };
 
 function resolve(urlPath) {
@@ -59,4 +60,7 @@ const server = http.createServer((req, res) => {
   });
 });
 
-server.listen(PORT, () => console.log(`Buildsheet running at http://localhost:${PORT}`));
+server.listen(PORT, () => {
+  console.log(`Buildsheet running at http://localhost:${PORT}`);
+  console.log(`Neon Nitro running at http://localhost:${PORT}/neon-nitro/`);
+});

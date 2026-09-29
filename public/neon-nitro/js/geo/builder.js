@@ -97,6 +97,19 @@ export class Geo {
     return this;
   }
 
+  /** Triangle with explicit per-vertex colours (soft glows). */
+  triCol(a, b, c, ca, cb, cc) {
+    const n0 = this.pos.length;
+    this.tri(a, b, c);
+    const cols = [ca, cb, cc];
+    if (this.pos.length > n0) {
+      const flip = this.flip[this.flip.length - 1];
+      const order = flip ? [0, 2, 1] : [0, 1, 2];
+      for (let k = 0; k < 3; k++) { const col = cols[order[k]]; const o = this.col.length - 9 + k * 3; this.col[o] = col[0]; this.col[o + 1] = col[1]; this.col[o + 2] = col[2]; }
+    }
+    return this;
+  }
+
   quad(a, b, c, d, uvs) {
     if (uvs) { this.tri(a, b, c, null, null, null, uvs[0], uvs[1], uvs[2]); this.tri(a, c, d, null, null, null, uvs[0], uvs[2], uvs[3]); }
     else { this.tri(a, b, c); this.tri(a, c, d); }

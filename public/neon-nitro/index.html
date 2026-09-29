@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#0b0616">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="description" content="Neon Nitro: a cel-shaded neo-Tokyo arcade drift racer with power-ups and a full tuner garage.">
+<title>Neon Nitro</title>
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="stylesheet" href="css/fonts.css">
+<link rel="stylesheet" href="css/game.css">
+<script type="importmap">{"imports":{"three":"/vendor/three/build/three.module.js","three/addons/":"/vendor/three/examples/jsm/"}}</script>
+</head>
+<body>
+<div id="app">
+  <canvas id="gl"></canvas>
+  <div id="fx-layer"></div>
+  <div id="ui"></div>
+  <div id="rotate"><div class="rot-phone"></div><p>Turn your phone sideways to race!</p></div>
+  <div id="boot"><div class="boot-logo"><span class="b1">NEON</span><span class="b2">NITRO</span></div><div class="boot-bar"><i></i></div><div class="boot-msg">Warming up the turbos…</div></div>
+</div>
+<noscript><p style="color:#fff;font-family:sans-serif;padding:2em">Neon Nitro needs JavaScript and WebGL.</p></noscript>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
