@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Neon Nitro render test</title>
+<style>html,body{margin:0;height:100%;background:#000;overflow:hidden}canvas{display:block}</style>
+<script type="importmap">{"imports":{"three":"/vendor/three/build/three.module.js","three/addons/":"/vendor/three/examples/jsm/"}}</script>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script type="module">
+import * as THREE from 'three';
+import { View } from '../js/render/view.js';
+import { toonMaterial, skyMaterial, G } from '../js/render/toon.js';
+import { Geo } from '../js/geo/builder.js';
+const view = new View(document.getElementById('c'));
+view.setQuality('high', false);
+const scene = new THREE.Scene();
+const cam = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.3, 1500);
+cam.position.set(8, 5, 12); cam.lookAt(0, 1, 0);
+view.camera = cam; view.resize();
+scene.add(new THREE.Mesh(new THREE.SphereGeometry(900, 24, 16), skyMaterial()));
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), toonMaterial({ color: 0x2a2a44 }));
+ground.rotation.x = -Math.PI / 2; scene.add(ground);
+const g = new Geo();
+g.color(0xff3b8b).box(0, 1, 0, 2, 2, 2);
+g.color(0x21e6ff).cyl([4, 0, 0], [4, 3, 0], 1, 0.6, 12);
+g.color(0xffd23f).sphere(-4, 1.2, 0, 1.2, 1.2, 1.2, 16, 10);
+g.color(0x7cff5b).cbox(0, 1.5, -5, 3, 3, 3, 0.4);
+const m = new THREE.Mesh(g.build(), toonMaterial({ vertexColors: true, spec: 0.6, shine: 30 }));
+scene.add(m);
+const bld = new Geo();
+bld.uvMode = (p, n) => Math.abs(n.y) > 0.5 ? [0, 0] : [Math.abs(n.x) > 0.5 ? p.z : p.x, p.y + 0.01];
+bld.color([0.3, 0.3, 0.45]).box(-10, 15, -20, 10, 30, 10);
+bld.color([0.5, 0.3, 0.45]).box(8, 20, -30, 12, 40, 12);
+scene.add(new THREE.Mesh(bld.build({ color: true, uv: true }), toonMaterial({ vertexColors: true, windows: true })));
+let t = 0;
+function loop() { t += 1 / 60; G.uTime.value = t; m.rotation.y = t * 0.3; view.render(scene, cam, t); requestAnimationFrame(loop); }
+loop();
+window.__view = view; window.__ready = true;
+</script>
+</body>
+</html>

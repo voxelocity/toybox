@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Neon Nitro car test</title>
+<link rel="stylesheet" href="../css/fonts.css">
+<style>html,body{margin:0;height:100%;background:#000;overflow:hidden}canvas{display:block}#i{position:fixed;left:6px;top:6px;color:#fff;font:12px monospace}</style>
+<script type="importmap">{"imports":{"three":"/vendor/three/build/three.module.js","three/addons/":"/vendor/three/examples/jsm/"}}</script>
+</head>
+<body>
+<canvas id="c"></canvas><div id="i"></div>
+<script type="module">
+import * as THREE from 'three';
+import { View } from '../js/render/view.js';
+import { toonMaterial, skyMaterial, G, applyTheme } from '../js/render/toon.js';
+import { CarModel } from '../js/cars/car.js';
+import { defaultConfig } from '../js/cars/catalog.js';
+await document.fonts.ready;
+try { await Promise.all([document.fonts.load('40px Bangers'), document.fonts.load('40px "Dela Gothic One"', '風雷鬼走り屋')]); } catch {}
+const q = new URLSearchParams(location.search);
+const view = new View(document.getElementById('c'));
+view.setQuality('high', false);
+const scene = new THREE.Scene();
+const cam = new THREE.PerspectiveCamera(+(q.get('fov') || 32), innerWidth / innerHeight, 0.3, 1500);
+view.camera = cam; view.resize();
+applyTheme({ light: '#fff4e8', shadow: '#6a58a8', sky: '#2a2050', ground: '#140a1c', rim: '#ff3fa4', fog: '#1a0f33', skyTop: '#07041a', skyHorizon: '#7a2a78', lightDir: [0.5, 0.9, 0.35], fogNear: 60, fogFar: 400, rimStrength: 0.5 });
+scene.add(new THREE.Mesh(new THREE.SphereGeometry(900, 24, 16), skyMaterial()));
+const ground = new THREE.Mesh(new THREE.CircleGeometry(40, 48), toonMaterial({ color: 0x2d2a44, rim: 0 }));
+ground.rotation.x = -Math.PI / 2; scene.add(ground);
+const cfgs = [];
+const bodies = (q.get('body') || 'kaze').split(',');
+const params = ['front', 'rear', 'side', 'aero', 'wheels', 'height', 'camber', 'livery', 'paint', 'finish', 'liveryColor', 'rimColor'];
+const cars = [];
+bodies.forEach((b, i) => {
+  const cfg = defaultConfig(b);
+  for (const p of params) if (q.get(p)) cfg[p] = q.get(p).split(',')[Math.min(i, q.get(p).split(',').length - 1)];
+  if (cfg.paint && !cfg.paint.startsWith('#')) cfg.paint = '#' + cfg.paint;
+  if (cfg.liveryColor && !cfg.liveryColor.startsWith('#')) cfg.liveryColor = '#' + cfg.liveryColor;
+  const car = new CarModel(cfg);
+  car.root.position.z = (i - (bodies.length - 1) / 2) * 3.2;
+  scene.add(car.root);
+  cars.push(car);
+});
+const views = { fq: [[6.2, 1.9, 3.6], [1.0, 0.55, 0]], rq: [[-6.2, 2.1, 3.6], [-1.0, 0.7, 0]], q3: [[6.5, 2.2, 5.5], [0, 0.6, 0]], side: [[0, 0.8, 10], [0, 0.7, 0]], front: [[10, 1.0, 0], [0, 0.7, 0]], rear: [[-10, 1.4, 0], [0, 0.8, 0]], r3: [[-6.2, 2.4, 5.2], [0, 0.7, 0]], top: [[0.01, 14, 0], [0, 0, 0]], chase: [[-7.5, 2.6, 0], [2, 1, 0]], wide: [[9, 4, 12], [0, 0.6, 0]] };
+const v = views[q.get('view') || 'q3'];
+const k = +(q.get('dist') || 1);
+cam.position.set(v[0][0] * k, v[0][1] * k, v[0][2] * k); cam.lookAt(...v[1]);
+document.getElementById('i').textContent = cars.map((c) => c.info.tris + ' tris').join(' | ');
+let t = 0;
+function loop() { t += 1 / 60; G.uTime.value = t; view.render(scene, cam, t); requestAnimationFrame(loop); }
+loop();
+window.__cars = cars; window.__view = view; window.__ready = true;
+</script>
+</body>
+</html>

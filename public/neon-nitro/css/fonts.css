@@ -1,0 +1,11 @@
+/* Bundled display fonts (SIL Open Font License 1.1, see ../assets/fonts/OFL.txt) */
+@font-face {
+  font-family: 'Bangers';
+  src: url('../assets/fonts/Bangers-latin.woff2') format('woff2');
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Dela Gothic One';
+  src: url('../assets/fonts/DelaGothicOne-subset.woff2') format('woff2');
+  font-display: swap;
+}
