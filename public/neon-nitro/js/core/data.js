@@ -26,7 +26,8 @@ export const CUP_BONUS = { 3: 6000, 2: 3500, 1: 2000 };
 export const TT_REWARD = { gold: 3000, silver: 1500, bronze: 800 };
 // time-trial par times in seconds: gold, silver, bronze (3 laps, three nitros)
 export const TT_PAR = {
-  shibuya: [120, 130, 142], wangan: [130, 141, 155], haruna: [125, 136, 150], harbor: [122, 133, 146], akiba: [118, 129, 142], skytree: [130, 141, 155],
+  // calibrated against the autopilot's solo runs (gold = beat the bot)
+  shibuya: [116, 125, 136], wangan: [139, 150, 163], haruna: [134, 145, 157], harbor: [116, 125, 136], akiba: [118, 127, 138], skytree: [126, 137, 148],
 };
 
 // Rivals keep a signature ride so you learn who's who.

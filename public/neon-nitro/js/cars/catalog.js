@@ -45,8 +45,8 @@ export const PARTS = {
   front: {
     kaze: [
       P('stock', 'Stock S-Nose', 0, {}, 'Slim angry headlights and a clean bumper.'),
-      P('gtr', 'Skyline GT', 4200, { spd: 0.4, wgt: 0.3 }, 'Blunt boxer nose, twin square lamps, gaping grille.'),
-      P('euro', 'Bavarian M', 3800, { hnd: 0.4 }, 'Twin kidney grille, angel-eye halos, triple intakes.'),
+      P('gtr', 'Midnight GT', 4200, { spd: 0.4, wgt: 0.3 }, 'Blunt boxer nose, twin square lamps, gaping grille.'),
+      P('euro', 'Euro Kidney', 3800, { hnd: 0.4 }, 'Twin kidney grille, angel-eye halos, triple intakes.'),
       P('kaido', 'Kaido Racer', 5600, { wgt: 0.8, spd: -0.2 }, 'Bosozoku deppa chin, exposed oil cooler, yellow fogs.'),
       P('attack', 'Time Attack', 7800, { hnd: 0.9, spd: -0.2 }, 'Barn-door splitter, canards and a louvred hood.'),
       P('missile', 'Drift Missile', 1500, { acc: 0.4, wgt: -0.5, drf: 0.4 }, 'Bumper? Where we\'re going we don\'t need bumpers.'),
@@ -98,7 +98,7 @@ export const PARTS = {
     all: [
       P('stock', 'Stock Sides', 0, {}, 'Factory doors and sills.'),
       P('skirts', 'Street Skirts', 1800, { hnd: 0.3 }, 'Deep skirts, side splitters, aero mirrors.'),
-      P('widebody', 'Bunny Widebody', 9400, { hnd: 1, wgt: 0.4, spd: -0.2 }, 'Riveted overfenders, wider track, pure attitude.'),
+      P('widebody', 'Bolt-On Widebody', 9400, { hnd: 1, wgt: 0.4, spd: -0.2 }, 'Riveted overfenders, wider track, pure attitude.'),
       P('sidepipes', 'Side Exit Pipes', 4200, { acc: 0.6 }, 'Twin side-exit exhausts that spit flame on boost.'),
       P('works', 'Works Fenders', 6800, { hnd: 0.6, wgt: 0.3, drf: 0.3 }, 'Boxy bolt-on works flares and mud flaps.'),
       P('silhouette', 'Silhouette GT', 11500, { hnd: 1.1, spd: 0.3, wgt: 0.3 }, 'Race silhouette pods, vents, side exits. The full monty.'),
@@ -117,7 +117,7 @@ export const PARTS = {
   wheels: {
     all: [
       P('stock5', 'Stock 5-Spoke', 0, {}, 'Five fat spokes.'),
-      P('six', 'Rays Six', 3600, { acc: 0.5 }, 'Forged six-spoke. Featherlight.'),
+      P('six', 'Forged Six', 3600, { acc: 0.5 }, 'Forged six-spoke. Featherlight.'),
       P('mesh', 'Cross Mesh', 3200, { hnd: 0.3, acc: 0.2 }, 'Classic cross-spoke mesh.'),
       P('dish', 'Deep Dish', 4200, { drf: 0.5, wgt: 0.2 }, 'Three-piece with a lip you could eat soup from.'),
       P('fan', 'Turbofan', 3900, { spd: 0.5 }, 'Aero discs with fan blades.'),
@@ -140,7 +140,7 @@ export const PARTS = {
       P('stock', 'Stock', 0, {}, '0°. Sensible.'),
       P('mild', 'Mild', 600, { hnd: 0.2 }, '-3°. Track alignment.'),
       P('aggro', 'Aggressive', 1200, { drf: 0.4 }, '-7°. Stance bro approved.'),
-      P('stance', 'Hellaflush', 1900, { drf: 0.7, hnd: -0.2 }, '-12°. Pokes, stretched, proud.'),
+      P('stance', 'Flush Stance', 1900, { drf: 0.7, hnd: -0.2 }, '-12°. Pokes, stretched, proud.'),
       P('onikyan', 'Oni-Kyan', 2600, { drf: 1.2, hnd: -0.5 }, '-22°. Demon camber. Physics weeps.'),
     ],
   },

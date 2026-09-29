@@ -53,6 +53,7 @@ export class UI {
     if (!fn) return;
     const s = fn.call(this, arg) || {};
     this.cur = { name, ...s };
+    document.body.classList.toggle('post-race', name === 'results' || name === 'ceremony');
     if (s.el) { s.el.classList.add('screen'); this.root.appendChild(s.el); }
     this.focusIdx = 0;
     this._focus();
@@ -67,6 +68,7 @@ export class UI {
   _focus() {
     const els = this.navEls();
     els.forEach((e, i) => e.classList.toggle('focus', i === this.focusIdx && this.kbd));
+    if (this.kbd && els[this.focusIdx]) els[this.focusIdx].scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
   }
 
   frame() {
@@ -222,7 +224,7 @@ export class UI {
         const card = h(`<div class="card ${open ? '' : 'locked'}" ${open ? 'data-nav' : ''} style="width:300px"><h2 style="color:${cup.color};-webkit-text-stroke:1.5px var(--ink)">${cup.name}</h2><div class="jp">${cup.jp}</div>
           <p>${cup.tracks.map((t, i) => `<b style="font-family:var(--comic);font-size:17px;letter-spacing:.5px">${i + 1}. ${TRACKS[t].name}</b>`).join('<br>')}</p>
           <p style="font-size:12px;opacity:.7">${CLASSES.find((c) => c.id === clsId).desc}</p>
-          <div class="trophies">${tro}</div>${open ? `<div class="badge">${CLASSES.find((c) => c.id === clsId).name.toUpperCase()}</div>` : `<div class="lockicon">${UI_ICONS.lock}</div><p style="position:absolute;bottom:10px;left:10px;right:10px;font-weight:bold;text-align:center">${cup.unlock}</p>`}</div>`);
+          ${open ? `<div class="trophies">${tro}</div><div class="badge">${CLASSES.find((c) => c.id === clsId).name.toUpperCase()}</div>` : `<p class="unlock-req">${cup.unlock}</p><div class="lockicon">${UI_ICONS.lock}</div>`}</div>`);
         if (open) card.addEventListener('click', () => { g.audio.sfx('go'); g.startGP(cup.id, clsId); });
         cards.appendChild(card);
       }
@@ -240,7 +242,7 @@ export class UI {
     if (!g.classOpen(clsId)) clsId = 'street';
     const el = h(`<div class="fill halftone"><div class="topbar"><button class="btn back small" data-nav data-a="back">◀ BACK</button><h1>${tt ? 'TIME TRIAL<small>タイムアタック</small>' : 'QUICK RACE<small>フリー走行</small>'}</h1><div class="spacer"></div>${this.moneyHTML()}</div>
       ${tt ? '<p style="text-align:center;color:#cfc6ff;margin:6px 0 0">Solo, three laps, three nitros. Beat the par times for medal bonuses.</p>' : '<div class="seg classes" style="justify-content:center;margin-top:10px"></div>'}
-      <div class="cards" style="max-width:1100px"></div></div>`);
+      <div class="cards tracks"></div></div>`);
     const cards = el.querySelector('.cards');
     const segs = el.querySelector('.classes');
     const renderCls = () => {
@@ -260,7 +262,7 @@ export class UI {
       const best = g.save.d.tt[id];
       const medal = g.save.d.ttMedals?.[id];
       const par = TT_PAR[id];
-      const card = h(`<div class="card ${open ? '' : 'locked'}" ${open ? 'data-nav' : ''} style="width:230px"><h2 style="font-size:28px">${t.name}</h2><div class="jp">${t.jp} · ${cup.name}</div>
+      const card = h(`<div class="card ${open ? '' : 'locked'}" ${open ? 'data-nav' : ''}><h2>${t.name}</h2><div class="jp">${t.jp} · ${cup.name}</div>
         <div class="preview"></div><p style="margin-top:0">${t.blurb}</p>
         ${tt ? `<p style="font-family:var(--comic);font-size:17px;letter-spacing:.5px">BEST ${best ? fmtTime(best) : '--'} ${medal ? `<span class="tr${{ gold: 3, silver: 2, bronze: 1 }[medal]}" style="display:inline-block;width:22px;vertical-align:middle">${UI_ICONS.trophy}</span>` : ''}<br><span style="font-size:13px;opacity:.75">GOLD ${fmtTime(par[0])} · SILVER ${fmtTime(par[1])} · BRONZE ${fmtTime(par[2])}</span></p>` : ''}
         ${open ? '' : `<div class="lockicon">${UI_ICONS.lock}</div>`}</div>`);
@@ -289,6 +291,7 @@ export class UI {
     const lines = r.lines.map(([t, v]) => `<div class="line" style="display:flex;justify-content:space-between;font-size:15px"><span>${esc(t)}</span><b>+${money(v)}</b></div>`).join('');
     const el = h(`<div class="fill" style="background:rgba(11,6,22,.6)"><div class="results">
       <h2>${title}</h2>
+      ${pl.bestLap ? `<p class="bestlap">FASTEST LAP ${fmtTime(pl.bestLap)}</p>` : ''}
       ${r.mode === 'tt' ? `<p style="font-family:var(--comic);font-size:24px;letter-spacing:1px;margin:0">TIME ${fmtTime(pl.time)} · BEST ${fmtTime(r.best)}</p><p style="margin:2px 0">Par: gold ${fmtTime(r.par[0])} · silver ${fmtTime(r.par[1])} · bronze ${fmtTime(r.par[2])}</p>` : `<table>${rows}</table>`}
       ${lines}
       <div class="earn"><span>EARNED</span><b>+${money(r.earned)}</b></div>

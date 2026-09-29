@@ -244,7 +244,11 @@ export class Race {
       c.update(dt);
       this.items.tickRoulette(c, dt);
       // rescue drone for anything wedged or lost (players can also press R)
-      if (!c.finished && (c.slowT > 4.5 || c.wrongWayT > 6 || (c.isPlayer && c.stuckT > 3.5))) { c.slowT = 0; c.wrongWayT = 0; c.stuckT = 0; c.startRespawn(); }
+      // progress watchdog for AI: catches cars see-sawing against a tree or pole
+      if (c.progress - (c._pRef ?? -1e9) > 12 || this.state !== 'race') { c._pRef = c.progress; c._pT = 0; } else c._pT = (c._pT || 0) + dt;
+      const held = this.track.aiSpeedLimit && this.track.aiSpeedLimit(c.s, c) < 8; // waiting at a level crossing etc.
+      const aiDriven = !c.isPlayer || this.opts.autoPlayer;
+      if (!c.finished && c.respawnT <= 0 && !held && (c.slowT > 4.5 || c.wrongWayT > 6 || (c.isPlayer && c.stuckT > 3.5) || (aiDriven && c._pT > 6))) { c.slowT = 0; c.wrongWayT = 0; c.stuckT = 0; c._pT = 0; c.startRespawn(); }
     }
     this._carCollisions();
     for (const c of this.cars) { this.items.checkBoxes(c); this.pads.check(c); this.props.check(c); }
@@ -326,12 +330,18 @@ export class Race {
       if (ls > L * 0.75 && s < L * 0.25) {
         if (c.cp >= 2 || c.lap === 0) {
           c.lap++; c.cp = 0;
+          // lap timing (all cars; the player's best shows on the HUD and results)
+          if (c.lap >= 2 && c.lapStart != null) {
+            const lt = this.raceTime - c.lapStart;
+            c.lastLap = lt;
+            if (!c.bestLap || lt < c.bestLap) c.bestLap = lt;
+          }
+          c.lapStart = this.raceTime;
           if (c.lap > this.laps) this._finishCar(c);
           else if (c.isPlayer && c.lap > 1) {
             if (c.lap === this.laps) { this.hud.banner('FINAL LAP!', 'final'); this.audio?.sfx('finallap'); this.audio?.musicIntensity(1); }
             else { this.hud.banner(`LAP ${c.lap}`, 'lap'); this.audio?.sfx('lap'); }
           }
-          if (c.isPlayer && c.lap >= 1) c.lapStart = this.raceTime;
         }
       } else if (ls < L * 0.25 && s > L * 0.75) {
         if (c.lap > 0) { c.lap--; c.cp = 3; }

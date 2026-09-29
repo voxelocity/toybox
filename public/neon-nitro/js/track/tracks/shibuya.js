@@ -64,7 +64,7 @@ export default {
   setup(track) {
     viaduct(track, 0.365, { height: 10, period: 13, trainColor: '#56f06b' });
     viaduct(track, 0.66, { height: 11, period: 17, offset: 5, trainColor: '#ff8a1e' });
-    levelCrossing(track, 0.59, { period: 22, cross: 4, warn: 3, offset: 9, color: '#ffe23b', cars: 3 });
+    levelCrossing(track, 0.59, { period: 24, cross: 3, warn: 2.2, offset: 9, color: '#ffe23b', cars: 3 });
   },
 };
 

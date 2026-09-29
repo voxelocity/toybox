@@ -169,7 +169,21 @@ function tollPlaza(track, chunks, u, rng) {
       gg.set(rgb('#8a86a0'), 0, 0); gg.box(0, 5, 0, 0.4, 4.4, 0.4);
     });
     addSign(sg, [P.px - F.tx * 0.2, P.py + 6.1, P.pz - F.tz * 0.2], -F.tx, -F.tz, 3.2, 1.1, signUV('h', k % 2 ? 13 : 12), 1);
-    track.addBox(P.px, P.pz, 3.6, 1.2, F.ang, { tag: 'booth' });
+    // rounded island (chain of circles) so glancing cars slide off instead of stopping dead
+    for (const a of [-2.6, -0.9, 0.9, 2.6]) track.addCircle(P.px + F.tx * a, P.pz + F.tz * a, 1.05, { tag: 'booth', bounce: 0.2 });
   }
+  // AI: line up with a toll lane (gap centres between booths) on approach
+  const gaps = Array.from({ length: booths + 1 }, (_, k) => -hw + ((k + 0.5) * (hw * 2)) / (booths + 1));
+  const prev = track.aiLaneBias;
+  track.aiLaneBias = (ss, latT) => {
+    let b = prev ? prev(ss, latT) : 0;
+    const ds = path.delta(ss, s);
+    if (ds > -5 && ds < 70) {
+      const t = latT + b;
+      const gp = gaps.reduce((a, x) => (Math.abs(x - t) < Math.abs(a - t) ? x : a));
+      b += (gp - t) * (ds < 40 ? 1 : 0.6);
+    }
+    return b;
+  };
   void rng;
 }
