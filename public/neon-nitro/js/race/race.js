@@ -494,6 +494,7 @@ export class Race {
 
   render() {
     this.camera.aspect = this.view.cssW / this.view.cssH;
+    this.track.applyDrawDistance(this.camera.position, this.view.q.draw ?? 1);
     this.view.render(this.scene, this.camera, this.time);
   }
 

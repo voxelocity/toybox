@@ -77,7 +77,7 @@ export default {
     propAt(track, 'sign', 0.182 * track.path.length, 0);
   },
   setup(track) {
-    rollers(track, [[0.2, 1, 0], [0.2, -1, 2.4], [0.2, 1, 4.8]], { kind: 'gacha', along: 105, period: 7.2, colors: CAPS });
+    rollers(track, [[0.2, 1, 0], [0.2, -1, 3.8]], { kind: 'gacha', along: 105, period: 7.6, colors: CAPS });
     laserGates(track, [[0.242, 0]], { style: 'boom', period: 3.6 });
     viaduct(track, 0.74, { height: 10, period: 15, offset: 4, trainColor: '#ffe23b', cars: 6 });
     searchlights(track, [[359, 17, 150], [385, 17, 150], [CX, 36, CZ]]);

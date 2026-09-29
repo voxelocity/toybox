@@ -130,7 +130,9 @@ export function cityDressing(track, chunks, rng, o = {}) {
     for (let i = 0; i < N; i += 10) { cx += path.px[i]; cz += path.pz[i]; }
     cx /= N / 10; cz /= N / 10;
     const g = new Geo(), sg = new Geo();
-    skyline(g, sg, null, rng, { cx, cz, r0: 420, r1: 900, count: 110, hMin: 40, hMax: 190, ...(o.skyline || {}) });
+    const sk = { cx, cz, r0: 420, r1: 900, count: 110, hMin: 40, hMax: 190, ...(o.skyline || {}) };
+    sk.count = Math.round(sk.count * (track.detail ?? 1));
+    skyline(g, sg, null, rng, sk);
     if (o.landmark) latticeTower(g, cx + o.landmark[0], cz + o.landmark[1], o.landmark[2] ?? 200);
     track.extra = track.extra || [];
     track.extra.push([g, 'world'], [sg, 'sign']);

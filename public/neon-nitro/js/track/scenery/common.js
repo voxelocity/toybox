@@ -126,7 +126,8 @@ export function scatterTrees(track, terr, rng, o) {
   const { minX, maxX, minZ, maxZ } = terr.bounds;
   const g = new Geo();
   let placed = 0;
-  for (let k = 0; k < (o.tries ?? 2500) && placed < (o.count ?? 500); k++) {
+  const count = Math.round((o.count ?? 500) * (track.detail ?? 1));
+  for (let k = 0; k < (o.tries ?? 2500) && placed < count; k++) {
     const x = minX + rng() * (maxX - minX), z = minZ + rng() * (maxZ - minZ);
     const n = terr.near(x, z);
     if (n.i >= 0) {

@@ -19,6 +19,8 @@ export class Track {
     this.def = def;
     this.theme = def.theme;
     this.opts = opts;
+    // scenery density for the quality tier (scatter/skyline counts scale with it)
+    this.detail = { low: 0.5, medium: 0.8 }[opts.quality] ?? 1;
     this.group = new THREE.Group();
     this.path = new Path(def.points, { width: def.width ?? 18, height: def.height ?? 0, maxBank: def.maxBank ?? 0.1, autoBank: def.autoBank ?? 4 });
     this.length = this.path.length;
@@ -45,6 +47,7 @@ export class Track {
   build(scene) {
     const def = this.def;
     applyTheme(this.theme);
+    this._fog = [G.uFogNear.value, G.uFogFar.value];
     G.uHalftone.value = this.theme.halftone ?? 1;
     this.scene = scene;
     const worldMat = toonMaterial({ vertexColors: true, emitAttr: true, windows: true, rim: 0.2 });
@@ -54,6 +57,7 @@ export class Track {
     this.materials = { world: worldMat, sign: signMat, glow: glowMat };
     const chunks = new Chunks(this.path);
     this.chunks = chunks;
+    this.chunkMeshes = [];
     buildRoad(this, chunks);
     for (const r of def.ramps || []) this.addRamp(r.u, r.lat ?? 0, r.w ?? 8, r.len ?? 10, r.h ?? 1.6, r);
     this.propSpots = [];
@@ -66,6 +70,8 @@ export class Track {
         const m = new THREE.Mesh(geo.build({ color: true, emit: mat !== glowMat, uv }), mat);
         m.matrixAutoUpdate = false;
         if (mat === glowMat) m.renderOrder = 5;
+        m.geometry.computeBoundingSphere();
+        this.chunkMeshes.push(m);
         this.group.add(m);
       }
     }
@@ -189,6 +195,21 @@ export class Track {
 
   update(dt, t, race) {
     for (const u of this.updaters) u(dt, t, race);
+  }
+
+  /**
+   * Draw distance for lower quality tiers: pull the fog in and skip road
+   * chunks that are fully inside it. draw = 1 leaves everything as authored.
+   */
+  applyDrawDistance(camPos, draw = 1) {
+    const [near, far] = this._fog;
+    G.uFogNear.value = near * draw;
+    G.uFogFar.value = far * draw;
+    const lim = far * draw + 40;
+    for (const m of this.chunkMeshes) {
+      const bs = m.geometry.boundingSphere;
+      m.visible = draw >= 1 || camPos.distanceTo(bs.center) - bs.radius < lim;
+    }
   }
 
   dispose() {
