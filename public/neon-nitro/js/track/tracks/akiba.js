@@ -6,7 +6,7 @@ import { Geo } from '../../geo/builder.js';
 import { rgb } from '../build.js';
 import { cityDressing } from '../scenery/city.js';
 import { propLine, propCluster, sidewalkProps, propAt } from '../scenery/common.js';
-import { rollers, laserGates, viaduct, frame } from '../hazards.js';
+import { rollers, laserGates, viaduct, searchlights, frame } from '../hazards.js';
 import { spotGlow, groundGlow, streetLamp } from '../kit.js';
 import { addSign, signUV } from '../../render/signs.js';
 
@@ -286,32 +286,6 @@ function gachaGate(track, chunks, u) {
 }
 
 // ------------------------------------------------------------------ live set dressing
-/** Sweeping searchlight beams (additive cones) from the roof tops. */
-function searchlights(track, spots) {
-  const beam = new Geo();
-  const C = [0.3, 0.34, 0.5], K = [0, 0, 0];
-  const len = 150, r = 7;
-  for (let k = 0; k < 6; k++) {
-    const a = (k / 6) * Math.PI * 2, b = ((k + 1) / 6) * Math.PI * 2;
-    beam.triCol([0, 0, 0], [Math.cos(a) * r, len, Math.sin(a) * r], [Math.cos(b) * r, len, Math.sin(b) * r], C, K, K);
-  }
-  const geo = beam.build({ color: true, emit: false, uv: false });
-  const list = spots.map(([x, y, z], k) => {
-    const pivot = new THREE.Group();
-    pivot.position.set(x, y, z);
-    pivot.rotation.order = 'YXZ';
-    const m = new THREE.Mesh(geo, track.materials.glow);
-    m.renderOrder = 6;
-    m.frustumCulled = false;
-    pivot.add(m);
-    track.group.add(pivot);
-    return { pivot, ph: k * 2.1 };
-  });
-  track.updaters.push((dt, t) => {
-    for (const l of list) { l.pivot.rotation.y = t * 0.35 + l.ph; l.pivot.rotation.x = 0.42 + Math.sin(t * 0.5 + l.ph) * 0.18; }
-  });
-}
-
 /** Advertising blimp circling Electric Town. */
 function blimp(track) {
   const g = new Geo(), sg = new Geo();

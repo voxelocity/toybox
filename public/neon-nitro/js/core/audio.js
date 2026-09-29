@@ -123,6 +123,8 @@ export class Audio {
       case 'pad': N(0.5, { type: 'bandpass', f: 600, sweep: 4000, q: 2, vol: 0.25 }); [1318, 1760].forEach((f, i) => T(f, 0.15, { type: 'triangle', vol: 0.12, t: i * 0.05 })); break;
       case 'hit': T(700, 0.4, { type: 'square', slide: 110, vol: 0.2 }); N(0.3, { type: 'lowpass', f: 1500, vol: 0.3 }); T(90, 0.3, { type: 'sine', slide: 40, vol: 0.4 }); break;
       case 'hitOther': T(420, 0.18, { type: 'triangle', slide: 160, vol: 0.2 }); N(0.12, { type: 'bandpass', f: 2000, vol: 0.12 }); break;
+      case 'laserCharge': T(180, 1.1, { type: 'sawtooth', slide: 1500, vol: 0.1 }); T(185, 1.1, { type: 'square', slide: 1520, vol: 0.05 }); break;
+      case 'laserFire': N(0.7, { type: 'bandpass', f: 2200, sweep: 300, q: 2, vol: 0.4 }); T(1700, 0.5, { type: 'sawtooth', slide: 70, vol: 0.2 }); T(60, 0.6, { type: 'sine', slide: 30, vol: 0.5 }); break;
       case 'explosion': N(1.1, { type: 'lowpass', f: 1600, sweep: 90, q: 0.8, vol: 0.6 }); T(95, 0.7, { type: 'sine', slide: 32, vol: 0.55 }); N(0.2, { type: 'highpass', f: 3000, vol: 0.2 }); break;
       case 'wall': N(0.14, { type: 'bandpass', f: 2600, q: 6, vol: 0.28 }); T(190, 0.12, { type: 'square', slide: 120, vol: 0.12 }); break;
       case 'bump': T(130, 0.16, { type: 'sine', slide: 55, vol: 0.4 }); N(0.1, { type: 'lowpass', f: 900, vol: 0.2 }); break;

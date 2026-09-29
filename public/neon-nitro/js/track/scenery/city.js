@@ -45,7 +45,7 @@ export function cityDressing(track, chunks, rng, o = {}) {
       const fx = -side * P.rx, fz = -side * P.rz;
       const depth = 12 + rng() * 16;
       let h = (o.hMin ?? 10) + Math.pow(rng(), 1.7) * ((o.hMax ?? 60) - (o.hMin ?? 10));
-      if (o.heightAt) h = o.heightAt(u, side, h, rng);
+      if (o.heightAt) h = o.heightAt(u, side, h, rng, P.px - fx * depth / 2, P.pz - fz * depth / 2);
       // footprint corners (front corners + back corners)
       const tx = P.tx, tz = P.tz;
       const corners = [

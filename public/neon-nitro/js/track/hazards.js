@@ -167,10 +167,12 @@ export function viaduct(track, u, o = {}) {
     gg.box(-3.3, 1.1, 0, 0.3, 1.0, span); gg.box(3.3, 1.1, 0, 0.3, 1.0, span);
     gg.set(rgb('#ff2d6f'), 0, 0.9); gg.box(-3.5, -0.3, 0, 0.1, 0.25, span); gg.box(3.5, -0.3, 0, 0.1, 0.25, span);
     gg.set(rgb('#4a4466'), 0, 0);
+    // piers: down to the road level, or all the way to the ground for skyways
+    const ph = o.ground ? F.y + H - (track.theme.groundY ?? 0) : H;
     for (let z = -span / 2 + 20; z < span / 2; z += 40) {
       const lim = Math.max(track.limL[F.i], track.limR[F.i]) + 4;
       if (Math.abs(z) < lim) continue;
-      gg.box(0, -H / 2, z, 3, H, 3);
+      gg.box(0, -ph / 2, z, 3, ph, 3);
     }
   });
   track.group.add(mesh(g));
@@ -495,7 +497,7 @@ export function laserGates(track, spots, o = {}) {
         beams.push({ half, pivot, a: 1.4 });
         continue;
       }
-      const bm = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.25, W), new THREE.MeshBasicMaterial({ color: half < 0 ? 0xff2050 : 0x20e8ff }));
+      const bm = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.25, W), new THREE.MeshBasicMaterial({ color: half < 0 ? new THREE.Color(2.6, 0.3, 0.6) : new THREE.Color(0.3, 2.2, 2.6) }));
       const P = frame(track, s, half * W / 2);
       bm.position.set(P.x, P.y + 1.0, P.z);
       bm.rotation.y = F.ang;
@@ -636,6 +638,173 @@ export function kaiju(track, pos, o = {}) {
     if (!roar) roared = false;
   });
   return root;
+}
+
+// ------------------------------------------------------------------ boss drone
+function oniHead() {
+  const g = new Geo();
+  const dark = rgb('#2a1426'), bone = rgb('#f0e8d8'), red = rgb('#b0182e'), deep = rgb('#6a1020');
+  // skull + face plate (x = forward)
+  g.set(dark, 0, 0); g.cbox(-0.5, 0.2, 0, 8, 7.4, 9.4, 0.9);
+  g.set(red, 0, 0.08); g.cbox(3.1, 0.4, 0, 2.6, 6.2, 8.2, 0.7);
+  // cheek plates, brow, nose ridge, crest
+  g.set(deep, 0, 0);
+  for (const z of [-1, 1]) g.at([3.4, -1.2, z * 3.6], [0, z * 0.45, z * -0.2], 1, (gg) => gg.box(0, 0, 0, 1.6, 3.4, 2.2));
+  g.at([4.3, 2.0, 0], [0, 0, 0], 1, (gg) => { gg.box(0, 0, -2.2, 1.1, 1.1, 3.8); gg.box(0, 0, 2.2, 1.1, 1.1, 3.8); });
+  g.set(red, 0, 0.1); g.box(4.5, 0.2, 0, 0.9, 2.4, 1.1);
+  g.set(dark, 0, 0); g.at([0.5, 4.1, 0], [0, 0, 0], 1, (gg) => gg.box(0, 0, 0, 7, 1.4, 1.2, [0.4, 1]));
+  g.set(rgb('#ff2d6f'), 0, 1); g.box(0.5, 4.85, 0, 6.4, 0.12, 0.5);
+  // eyes (angry slant)
+  g.set(rgb('#ffe23b'), 0, 1);
+  for (const z of [-2.2, 2.2]) g.at([4.55, 1.05, z], [z > 0 ? 0.3 : -0.3, 0, 0], 1, (gg) => gg.box(0, 0, 0, 0.5, 0.95, 2.3));
+  // curved horns
+  g.set(bone, 0, 0.12);
+  for (const z of [-1, 1]) {
+    const a = [0.4, 3.4, z * 3.2], b = [-0.2, 6.6, z * 5.2], c = [-1.6, 9.6, z * 5.6];
+    g.cyl(a, b, 1.25, 0.75, 8, true); g.cyl(b, c, 0.75, 0.1, 8, true);
+  }
+  // jaw with teeth + fangs and the laser emitter
+  g.set(dark, 0, 0); g.cbox(2, -4.3, 0, 4.8, 2, 7.4, 0.4);
+  g.set(bone, 0, 0.12);
+  for (let k = -3; k <= 3; k++) g.box(4.35, -3.2, k * 1.0, 0.5, 0.6, 0.55);
+  for (const z of [-1, 1]) g.cyl([4.3, -2.9, z * 2.9], [4.4, -4.6, z * 2.7], 0.35, 0.05, 6, true);
+  g.set(rgb('#ff2d6f'), 0, 1); g.cyl([2.2, -5.2, 0], [2.2, -5.8, 0], 1.3, 0.8, 10, true);
+  // thrusters, side fins
+  g.set(rgb('#20d8ff'), 0, 1); for (const z of [-3, 3]) g.cyl([-2, -3.4, z], [-2, -4.3, z], 1.0, 0.6, 8, true);
+  g.set(rgb('#4a2440'), 0, 0); for (const z of [-5, 5]) g.at([-1, -0.4, z], [0, 0, 0.25], 1, (gg) => gg.box(0, 0, 0, 5.4, 3.2, 0.6));
+  return g;
+}
+
+/**
+ * Giant mecha-oni head that glides ahead of the leader and fires telegraphed
+ * laser strikes at racers: a red ring marks the spot, then the beam lands.
+ */
+export function bossDrone(track, o = {}) {
+  const path = track.path;
+  const L = path.length;
+  const root = new THREE.Group();
+  const head = mesh(oniHead());
+  root.add(head);
+  root.scale.setScalar(o.scale ?? 1.5);
+  const halo = new THREE.Mesh(new THREE.TorusGeometry(7.8, 0.35, 6, 36), new THREE.MeshBasicMaterial({ color: new THREE.Color(2.4, 0.35, 0.8) }));
+  halo.rotation.y = Math.PI / 2; halo.position.x = -4;
+  root.add(halo);
+  const orbs = [0, 1, 2].map(() => { const m = new THREE.Mesh(new THREE.SphereGeometry(0.9, 10, 6), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.3, 2, 2.4) })); root.add(m); return m; });
+  track.group.add(root);
+  const ringMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(2.2, 0.2, 0.5), transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide });
+  const ring = new THREE.Mesh(new THREE.RingGeometry(3.4, 4.8, 32), ringMat);
+  const fillMat = ringMat.clone();
+  const fill = new THREE.Mesh(new THREE.CircleGeometry(3.4, 32), fillMat);
+  for (const m of [ring, fill]) { m.rotation.x = -Math.PI / 2; m.renderOrder = 4; track.group.add(m); }
+  const beam = new THREE.Group();
+  const beamOuter = new THREE.Mesh(new THREE.CylinderGeometry(1.8, 1.8, 1, 12, 1, true), new THREE.MeshBasicMaterial({ color: new THREE.Color(2.4, 0.4, 1.2), transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
+  const beamCore = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.55, 1, 8, 1, true), new THREE.MeshBasicMaterial({ color: new THREE.Color(3, 3, 3) }));
+  beam.add(beamOuter, beamCore);
+  beam.visible = false;
+  track.group.add(beam);
+
+  const st = { s: 0, phase: 'idle', t: 0, next: o.delay ?? 7, tx: 0, ty: 0, tz: 0, ts: 0, tl: 0, pos: new THREE.Vector3() };
+  track.boss = { root, st };
+  const mover = { s: 0, lat: 0, x: 0, z: 0, r: 5.5, hazard: true, active: false };
+  track.movers = track.movers || [];
+  track.movers.push(mover);
+  const up = new THREE.Vector3(0, 1, 0), dir = new THREE.Vector3(), mouth = new THREE.Vector3();
+  const period = o.period ?? 4.2, warn = o.warn ?? 1.35;
+  track.updaters.push((dt, t, race) => {
+    // ---- glide ahead of the leader (a lazy lap when there is no race)
+    let goal = (t * 24) % L;
+    let rage = 1;
+    if (race && race.cars.length) {
+      const lead = race.cars.reduce((a, c) => (c.progress > a.progress ? c : a));
+      goal = lead.s + (o.ahead ?? 80);
+      if (lead.lap >= (race.laps || 3)) rage = 0.7;
+    }
+    const ds = path.delta(st.s, goal);
+    st.s = path.wrapS(st.s + Math.max(-60, Math.min(90, ds * 1.6)) * dt);
+    const P = path.point(st.s, Math.sin(t * 0.6) * 4);
+    const hy = P.py + (o.height ?? 24) + Math.sin(t * 1.3) * 1.2;
+    st.pos.set(P.px, hy, P.pz);
+    root.position.copy(st.pos);
+    // face the oncoming pack (against the direction of travel), look down at the target while charging
+    root.rotation.set(0, Math.atan2(P.tz, -P.tx), st.phase === 'warn' ? -0.25 : 0, 'YXZ');
+    halo.rotation.x = t * 1.8;
+    orbs.forEach((m, k) => { const a = t * 2.4 + (k * Math.PI * 2) / 3; m.position.set(-4, Math.cos(a) * 7.8, Math.sin(a) * 7.8); });
+    // ---- strike cycle: pick -> warn (ring) -> fire (beam) -> cool
+    st.t += dt;
+    if (st.phase === 'idle' && st.t > st.next && race && race.state === 'race') {
+      const cand = race.cars.filter((c) => { const d = path.delta(c.s, st.s); return d > 25 && d < 150 && !c.finished; });
+      if (cand.length) {
+        const c = (race.player && cand.includes(race.player) && Math.random() < 0.45) ? race.player : cand[Math.floor(Math.random() * cand.length)];
+        st.ts = path.wrapS(c.s + Math.max(12, c.speed * warn * 0.95));
+        st.tl = Math.max(-6, Math.min(6, (c.lat ?? 0) * 0.8));
+        const T = path.point(st.ts, st.tl);
+        st.tx = T.px; st.ty = T.py; st.tz = T.pz;
+        st.phase = 'warn'; st.t = 0;
+        for (const m of [ring, fill]) m.position.set(st.tx, st.ty + 0.09, st.tz);
+        mover.s = st.ts; mover.lat = st.tl; mover.x = st.tx; mover.z = st.tz; mover.active = true;
+        if (race.player && st.pos.distanceTo(race.player.pos) < 160) race.audio?.sfx('laserCharge', { vol: 0.8 });
+      } else st.next = st.t + 0.5;
+    }
+    if (st.phase === 'warn') {
+      const k = st.t / warn;
+      const blink = Math.sin(st.t * (10 + k * 30)) > 0 ? 1 : 0.55;
+      ringMat.opacity = 0.9 * blink; fillMat.opacity = 0.18 + 0.3 * k;
+      ring.scale.setScalar(1.4 - 0.4 * k);
+      if (st.t >= warn) {
+        st.phase = 'fire'; st.t = 0;
+        ringMat.opacity = 0; fillMat.opacity = 0;
+        if (race) {
+          race.fx.explosion(st.tx, st.ty + 0.5, st.tz, 1.1, [1, 0.3, 0.7]);
+          race.fx.ring(st.tx, st.ty + 0.3, st.tz, 9, [1, 0.4, 0.8]);
+          for (const c of race.cars) {
+            const dx = c.pos.x - st.tx, dz = c.pos.z - st.tz;
+            if (dx * dx + dz * dz < 5.6 * 5.6 && Math.abs(c.pos.y - st.ty) < 4) race.hitCar(c, 'tumble', null, 'ZAAAP!');
+          }
+          const d = race.player ? race.player.pos.distanceTo(new THREE.Vector3(st.tx, st.ty, st.tz)) : 999;
+          if (d < 90) { race.chase.shake(0.55 * (1 - d / 90)); race.audio?.sfx('laserFire', { vol: 1 - d / 120 }); }
+          if (d < 50) race.fx.pop('ZA-BOOM!', { world: new THREE.Vector3(st.tx, st.ty + 5, st.tz), color: '#ff5ccf' });
+        }
+      }
+    }
+    if (st.phase === 'fire') {
+      beam.visible = st.t < 0.38;
+      mouth.set(2.2, -5.6, 0).multiplyScalar(root.scale.x).applyEuler(root.rotation).add(st.pos);
+      dir.set(st.tx - mouth.x, st.ty - mouth.y, st.tz - mouth.z);
+      const len = dir.length();
+      beam.position.set((mouth.x + st.tx) / 2, (mouth.y + st.ty) / 2, (mouth.z + st.tz) / 2);
+      beam.quaternion.setFromUnitVectors(up, dir.normalize());
+      const w = 1 - st.t / 0.38;
+      beam.scale.set(0.4 + w, len, 0.4 + w);
+      if (st.t > 0.6) { st.phase = 'idle'; st.t = 0; st.next = period * rage * (0.8 + Math.random() * 0.4); mover.active = false; beam.visible = false; }
+    }
+  });
+}
+
+// ------------------------------------------------------------------ searchlights
+/** Sweeping searchlight beams (additive cones) from the roof tops. */
+export function searchlights(track, spots, o = {}) {
+  const beam = new Geo();
+  const C = o.color || [0.3, 0.34, 0.5], K = [0, 0, 0];
+  const len = o.len ?? 150, r = o.r ?? 7;
+  for (let k = 0; k < 6; k++) {
+    const a = (k / 6) * Math.PI * 2, b = ((k + 1) / 6) * Math.PI * 2;
+    beam.triCol([0, 0, 0], [Math.cos(a) * r, len, Math.sin(a) * r], [Math.cos(b) * r, len, Math.sin(b) * r], C, K, K);
+  }
+  const geo = beam.build({ color: true, emit: false, uv: false });
+  const list = spots.map(([x, y, z], k) => {
+    const pivot = new THREE.Group();
+    pivot.position.set(x, y, z);
+    pivot.rotation.order = 'YXZ';
+    const m = new THREE.Mesh(geo, track.materials.glow);
+    m.renderOrder = 6;
+    m.frustumCulled = false;
+    pivot.add(m);
+    track.group.add(pivot);
+    return { pivot, ph: k * 2.1 };
+  });
+  track.updaters.push((dt, t) => {
+    for (const l of list) { l.pivot.rotation.y = t * 0.35 + l.ph; l.pivot.rotation.x = (o.tilt ?? 0.42) + Math.sin(t * 0.5 + l.ph) * 0.18; }
+  });
 }
 
 export { frame };
