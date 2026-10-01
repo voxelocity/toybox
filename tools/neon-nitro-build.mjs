@@ -34,9 +34,10 @@ if (!hosted) {
   ));
 } else {
   fs.cpSync(path.join(SRC, 'js'), path.join(OUT, 'js'), { recursive: true });
+  fs.copyFileSync(path.join(SRC, 'assets', 'fonts', 'OFL.txt'), path.join(OUT, 'OFL.txt')); // licence travels with the inlined fonts
   const version = JSON.parse(fs.readFileSync(path.join(THREE, 'package.json'), 'utf8')).version;
   // fonts.css with every url(...) swapped for a data: URI, then the game stylesheet
-  const fontsCss = fs.readFileSync(path.join(SRC, 'css', 'fonts.css'), 'utf8').replace(/url\('\.\.\/([^']+)'\)/g, (m, rel) => {
+  const fontsCss = fs.readFileSync(path.join(SRC, 'css', 'fonts.css'), 'utf8').replace('../assets/fonts/OFL.txt', 'OFL.txt').replace(/url\('\.\.\/([^']+)'\)/g, (m, rel) => {
     const b64 = fs.readFileSync(path.join(SRC, rel)).toString('base64');
     return `url('data:font/woff2;base64,${b64}')`;
   });
