@@ -6,6 +6,7 @@ import { fmtTime } from './hud.js';
 import { Garage } from './garage.js';
 import { Path } from '../track/path.js';
 import { isTouch } from '../render/view.js';
+import { connectedPad } from '../core/input.js';
 
 const h = (html) => { const d = document.createElement('div'); d.innerHTML = html.trim(); return d.firstElementChild; };
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -75,7 +76,7 @@ export class UI {
     const inp = this.game.input;
     const k = inp.menuKeys();
     // gamepad
-    const pad = navigator.getGamepads ? [...navigator.getGamepads()].find((p) => p && p.connected) : null;
+    const pad = connectedPad();
     const pe = (i) => { const v = !!(pad && pad.buttons[i] && pad.buttons[i].pressed); const was = this._padPrev[i]; this._padPrev[i] = v; return v && !was; };
     if (pad) {
       const ax = pad.axes[0] || 0, ay = pad.axes[1] || 0;

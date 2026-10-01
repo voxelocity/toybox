@@ -28,7 +28,7 @@ class Game {
   async boot() {
     progress(0.05, 'Inking the panels…');
     if (isTouch) document.body.classList.add('touch');
-    try { await Promise.race([Promise.all([document.fonts.load('40px Bangers'), document.fonts.load('40px "Dela Gothic One"', '風雷鬼走り屋渋谷')]), new Promise((r) => setTimeout(r, 2500))]); } catch { /* fallback fonts */ }
+    try { await Promise.race([Promise.all([document.fonts.load('40px Bangers'), document.fonts.load('40px "Dela Gothic One"', '風雷鬼走り屋渋谷'), document.fonts.load('800 16px "Neon Nitro JP"', '渋谷')]), new Promise((r) => setTimeout(r, 2500))]); } catch { /* fallback fonts */ }
     this.save = new Save();
     progress(0.2, 'Charging neon…');
     this.view = new View(document.getElementById('gl'));

@@ -175,8 +175,8 @@ function tollPlaza(track, chunks, u, rng) {
   // AI: line up with a toll lane (gap centres between booths) on approach
   const gaps = Array.from({ length: booths + 1 }, (_, k) => -hw + ((k + 0.5) * (hw * 2)) / (booths + 1));
   const prev = track.aiLaneBias;
-  track.aiLaneBias = (ss, latT) => {
-    let b = prev ? prev(ss, latT) : 0;
+  track.aiLaneBias = (ss, latT, v) => {
+    let b = prev ? prev(ss, latT, v) : 0;
     const ds = path.delta(ss, s);
     if (ds > -5 && ds < 70) {
       const t = latT + b;

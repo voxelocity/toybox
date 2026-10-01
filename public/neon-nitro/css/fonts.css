@@ -9,3 +9,9 @@
   src: url('../assets/fonts/DelaGothicOne-subset.woff2') format('woff2');
   font-display: swap;
 }
+@font-face {
+  font-family: 'Neon Nitro JP';
+  src: url('../assets/fonts/NotoSansJP-800-subset.woff2') format('woff2');
+  font-weight: 100 900;
+  font-display: swap;
+}

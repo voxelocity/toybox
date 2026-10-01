@@ -424,19 +424,30 @@ export function rollers(track, spots, o = {}) {
   const list = spots.map(([u, dir, off], k) => {
     const m = ballModel(o.kind || 'rock', o.colors?.[k % o.colors.length]);
     track.group.add(m);
-    return { m, s0: u * path.length, dir, off: off ?? 0, s: 0, lat: 0, x: 0, z: 0, active: false };
+    // r: avoidance radius the AI keeps from it (see ai.js movers)
+    return { m, s0: u * path.length, dir, off: off ?? 0, s: 0, lat: 0, x: 0, z: 0, r: 2.6, active: false };
   });
   const period = o.period ?? 7;
+  let now = 0;
+  const latOf = (b, ph) => {
+    const i = path.indexAt(b.s0);
+    // along: roll back down the road toward the racers, weaving slowly enough to read
+    if (o.along) return b.dir * (path.w[i] / 2 - 3) * Math.sin(ph * 4.5 + b.off);
+    const W = Math.max(track.limL[i], track.limR[i]) + 12;
+    return b.dir * lerp(-W, W, ph);
+  };
   track.movers = track.movers || [];
-  for (const b of list) track.movers.push(b);
+  for (const b of list) {
+    b.closing = o.along ? o.along / period : 0;
+    b.latAt = (ahead) => latOf(b, ((now + ahead + b.off) % period) / period);
+    track.movers.push(b);
+  }
   track.updaters.push((dt, t, race) => {
+    now = t;
     for (const b of list) {
       const ph = ((t + b.off) % period) / period;
-      const i = path.indexAt(b.s0);
-      const W = Math.max(track.limL[i], track.limR[i]) + 12;
-      let s = b.s0, lat;
-      if (o.along) { s = b.s0 - ph * (o.along); lat = b.dir * (path.w[i] / 2 - 3) * Math.sin(ph * 9); }
-      else lat = b.dir * lerp(-W, W, ph);
+      const s = o.along ? b.s0 - ph * o.along : b.s0;
+      const lat = latOf(b, ph);
       const P = path.point(s, lat);
       b.s = s; b.lat = lat; b.x = P.px; b.z = P.pz; b.active = true;
       const r = o.kind === 'gacha' ? 1.6 : 1.7;
@@ -446,7 +457,7 @@ export function rollers(track, spots, o = {}) {
       if (!race) continue;
       for (const c of race.cars) {
         const dx = c.pos.x - P.px, dz = c.pos.z - P.pz;
-        if (dx * dx + dz * dz < (r + 1.3) ** 2) race.hitCar(c, 'tumble', null, o.kind === 'gacha' ? 'GACHA-BONK!' : 'KRAK!');
+        if (dx * dx + dz * dz < (r + 1.1) ** 2) race.hitCar(c, 'tumble', null, o.kind === 'gacha' ? 'GACHA-BONK!' : 'KRAK!');
       }
     }
   });
@@ -508,7 +519,9 @@ export function laserGates(track, spots, o = {}) {
     list.push({ s, W, beams, off: off ?? 0, F });
   }
   const period = o.period ?? 3.2;
+  let gatesNow = 0;
   track.updaters.push((dt, t, race) => {
+    gatesNow = t;
     for (const g of list) {
       const ph = ((t + g.off) % period) / period;
       const onHalf = ph < 0.5 ? -1 : 1;
@@ -518,7 +531,7 @@ export function laserGates(track, spots, o = {}) {
           const target = b.half === onHalf ? 0 : 1.4;
           b.a += Math.max(-dt * 3.2, Math.min(dt * 3.2, target - b.a));
           b.pivot.rotation.x = b.half * b.a;
-          b.on = b.a < 0.35;
+          b.on = b.a < 0.2; // grace while the arm swings
           continue;
         }
         const on = b.half === onHalf && !flicker; b.meshes.forEach((m) => { m.visible = on; }); b.on = on;
@@ -535,11 +548,16 @@ export function laserGates(track, spots, o = {}) {
     }
   });
   const prevBias = track.aiLaneBias;
-  track.aiLaneBias = (s, latT) => {
-    let b = prevBias ? prevBias(s, latT) : 0;
+  track.aiLaneBias = (s, latT, v) => {
+    let b = prevBias ? prevBias(s, latT, v) : 0;
     for (const g of list) {
       const ds = path.delta(s, g.s);
-      if (ds > 0 && ds < 50) { const safe = -(g.onHalf || 1); if (Math.sign(latT || 1) !== safe) b += safe * 5; }
+      if (ds <= 0 || ds >= 60) continue;
+      const eta = ds / Math.max(10, v?.speed ?? 30);
+      const ph = ((gatesNow + eta + g.off) % period) / period;
+      const safe = ph < 0.5 ? 1 : -1; // the open half when we arrive
+      const t = latT + b;
+      if (Math.sign(t || 1) !== safe || Math.abs(t) < 2.5) b += safe * Math.max(3, Math.min(6, Math.abs(t))) - t;
     }
     return b;
   };
@@ -709,7 +727,7 @@ export function bossDrone(track, o = {}) {
   track.movers = track.movers || [];
   track.movers.push(mover);
   const up = new THREE.Vector3(0, 1, 0), dir = new THREE.Vector3(), mouth = new THREE.Vector3();
-  const period = o.period ?? 4.2, warn = o.warn ?? 1.35;
+  const period = o.period ?? 4.2, warn = o.warn ?? 1.6;
   track.updaters.push((dt, t, race) => {
     // ---- glide ahead of the leader (a lazy lap when there is no race)
     let goal = (t * 24) % L;
@@ -734,7 +752,7 @@ export function bossDrone(track, o = {}) {
     if (st.phase === 'idle' && st.t > st.next && race && race.state === 'race') {
       const cand = race.cars.filter((c) => { const d = path.delta(c.s, st.s); return d > 25 && d < 150 && !c.finished; });
       if (cand.length) {
-        const c = (race.player && cand.includes(race.player) && Math.random() < 0.45) ? race.player : cand[Math.floor(Math.random() * cand.length)];
+        const c = (race.player && cand.includes(race.player) && Math.random() < 0.3) ? race.player : cand[Math.floor(Math.random() * cand.length)];
         st.ts = path.wrapS(c.s + Math.max(12, c.speed * warn * 0.95));
         st.tl = Math.max(-6, Math.min(6, (c.lat ?? 0) * 0.8));
         const T = path.point(st.ts, st.tl);

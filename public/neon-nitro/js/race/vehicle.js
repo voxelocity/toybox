@@ -32,7 +32,7 @@ export class Vehicle {
     this.input = { steer: 0, throttle: 0, brake: 0, drift: false, driftPressed: false, driftReleased: false };
     this.drift = { on: false, dir: 0, t: 0, level: 0, pending: 0, hop: 0 };
     this.boostT = 0; this.boostMul = 1; this.boostKind = '';
-    this.spinT = 0; this.spinDur = 0; this.spinTurns = 2; this.tumble = false; this.squashT = 0;
+    this.spinT = 0; this.spinDur = 0; this.spinTurns = 2; this.tumble = false; this.squashT = 0; this.hackT = 0;
     this.invulnT = 0; this.shieldT = 0;
     this.visYaw = 0; this.visRoll = 0; this.visPitch = 0; this.driftVis = 0;
     this.trick = { t: 0, kind: 0, ready: false, done: false };
@@ -97,6 +97,15 @@ export class Vehicle {
     if (this.invulnT > 0 || this.ryuT > 0 || this.respawnT > 0) return false;
     if (this.shieldT > 0 && kind !== 'bump') { this.shieldT = 0; this.invulnT = 0.6; this.events.push({ type: 'shieldPop' }); return false; }
     if (kind === 'bump') { this.speed *= 0.85; return true; }
+    if (kind === 'hack') {
+      // Glitch Storm: engine hacked - lose speed and wobble, but keep control (no spin)
+      this.hackT = 1.8; this.speed *= 0.75;
+      this.drift.on = false; this.drift.t = 0; this.drift.level = 0;
+      this.boostT = 0;
+      this.invulnT = 1.2;
+      this.events.push({ type: 'hit', kind, from });
+      return true;
+    }
     this.drift.on = false; this.drift.t = 0; this.drift.level = 0;
     this.boostT = 0;
     this.spinDur = kind === 'tumble' ? 1.45 : kind === 'squash' ? 1.3 : 1.05;
@@ -137,10 +146,13 @@ export class Vehicle {
     else if (offF < 1) vmax *= offF;
     if (ryu) vmax = this.vmax * 1.45;
     if (this.slipstream > 1.2) vmax *= 1.08;
+    const hacked = this.hackT > 0;
+    if (hacked) { this.hackT = Math.max(0, this.hackT - dt); vmax *= 0.55; }
 
     let throttle = spinning ? 0 : inp.throttle;
     let brake = spinning ? 0 : inp.brake;
     let steer = spinning ? 0 : inp.steer;
+    if (hacked) steer = Math.max(-1, Math.min(1, steer + Math.sin(this.hackT * 23) * 0.3));
     if (this.boostT > 0) throttle = 1;
 
     // ---------- drift state machine
@@ -410,7 +422,8 @@ export class Vehicle {
       const k = 1 - this.spinT / this.spinDur;
       spinOff = (1 - Math.pow(1 - k, 2.2)) * Math.PI * 2 * this.spinTurns;
     }
-    const yawV = this.yaw + this.driftVis + spinOff;
+    const hackJitter = this.hackT > 0 ? Math.sin(this.hackT * 61) * 0.06 : 0;
+    const yawV = this.yaw + this.driftVis + spinOff + hackJitter;
     // up vector from the road
     const up = _u.set(0, 1, 0);
     if (this.grounded) {

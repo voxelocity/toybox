@@ -71,11 +71,14 @@ export class AIDriver {
     for (const m of tr.movers || []) {
       if (m.active === false) continue;
       const ds = path.delta(v.s, m.s);
-      if (ds > 2 && ds < 45 && Math.abs(m.lat - latT) < (m.r || 2) + 2.2) this.avoid = (m.lat > latT ? -1 : 1) * ((m.r || 2) + 3.5);
+      if (ds <= 2 || ds >= 45) continue;
+      // where will it be when we get there? (movers that know their path expose latAt)
+      const ml = m.latAt ? m.latAt(ds / Math.max(10, spd + (m.closing || 0))) : m.lat;
+      if (Math.abs(ml - latT) < (m.r || 2) + 2.2) this.avoid = (ml > latT ? -1 : 1) * ((m.r || 2) + 3.5);
     }
     latT += this.avoid;
     // hazard lanes defined by the track (e.g. level crossing gates)
-    if (tr.aiLaneBias) latT += tr.aiLaneBias(v.s, latT) || 0;
+    if (tr.aiLaneBias) latT += tr.aiLaneBias(v.s, latT, v) || 0;
     // stay on the tarmac (sidewalks have lamp posts and trees); open plazas allow more
     const eL = tr.edges.L[i], eR = tr.edges.R[i];
     const limLo = eL.kind === 'open' ? tr.limL[i] - 2.5 : hw - 1.7;

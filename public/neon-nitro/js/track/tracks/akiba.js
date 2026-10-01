@@ -78,7 +78,7 @@ export default {
   },
   setup(track) {
     rollers(track, [[0.2, 1, 0], [0.2, -1, 3.8]], { kind: 'gacha', along: 105, period: 7.6, colors: CAPS });
-    laserGates(track, [[0.242, 0]], { style: 'boom', period: 3.6 });
+    laserGates(track, [[0.242, 0]], { style: 'boom', period: 5 });
     viaduct(track, 0.74, { height: 10, period: 15, offset: 4, trainColor: '#ffe23b', cars: 6 });
     searchlights(track, [[359, 17, 150], [385, 17, 150], [CX, 36, CZ]]);
     blimp(track);

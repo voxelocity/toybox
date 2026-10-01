@@ -18,12 +18,13 @@ export const ITEMS = {
   glitch: { name: 'Glitch Storm', desc: 'Hacks every racer ahead of you.' },
 };
 export const ITEM_IDS = Object.keys(ITEMS);
+const EMP_RADIUS = 24;
 
 // weights per rank bucket: 1st, 2-3, 4-5, 6-7, last
 const TABLE = {
   nitro: [14, 16, 15, 10, 6], nitro3: [0, 4, 14, 22, 22], oil: [34, 16, 6, 0, 0], shuriken: [30, 22, 12, 6, 0],
   missile: [0, 18, 22, 20, 14], daruma: [10, 10, 10, 6, 2], shield: [12, 10, 9, 6, 4], emp: [0, 4, 9, 12, 10],
-  ryu: [0, 0, 1, 10, 24], glitch: [0, 0, 2, 8, 18],
+  ryu: [0, 0, 1, 10, 24], glitch: [0, 0, 1, 5, 12],
 };
 
 export function rollItem(rank, n, rng = Math.random, excludeRare = false) {
@@ -296,12 +297,12 @@ export class Items {
   }
 
   emp(v) {
-    this.fx.ring(v.pos.x, v.pos.y + 0.5, v.pos.z, 30, [0.3, 0.9, 1]);
-    this.fx.ring(v.pos.x, v.pos.y + 1.5, v.pos.z, 22, [1, 0.3, 0.8]);
+    this.fx.ring(v.pos.x, v.pos.y + 0.5, v.pos.z, EMP_RADIUS, [0.3, 0.9, 1]);
+    this.fx.ring(v.pos.x, v.pos.y + 1.5, v.pos.z, EMP_RADIUS * 0.72, [1, 0.3, 0.8]);
     this.fx.burst(v.pos.x, v.pos.y + 1, v.pos.z, 30, { color: [0.4, 0.9, 1], shape: SHAPE.STAR, size: 1.2, life: 0.6, speed: 24, grav: 0 });
     for (const c of this.race.cars) {
       if (c === v) continue;
-      if (c.pos.distanceTo(v.pos) < 30) this.race.hitCar(c, 'spin', v, 'ZZAP!');
+      if (c.pos.distanceTo(v.pos) < EMP_RADIUS) this.race.hitCar(c, 'spin', v, 'ZZAP!');
     }
   }
 
@@ -325,8 +326,7 @@ export class Items {
       if (c.place < v.place) {
         // comic lightning bolt from the sky
         this.fx.burst(c.pos.x, c.pos.y + 2, c.pos.z, 16, { color: [0.4, 1, 0.6], shape: SHAPE.SQUARE, size: 0.9, life: 0.7, speed: 8, grav: 8 });
-        this.race.hitCar(c, 'spin', v, 'GLITCH!', true);
-        c.glitchT = 2.2;
+        if (this.race.hitCar(c, 'hack', v, 'HACKED!', true)) c.glitchT = 2.2;
       }
     }
   }

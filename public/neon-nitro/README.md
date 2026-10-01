@@ -5,7 +5,7 @@ Mario Kart–style item boxes, a power-slide that is hard to spin out of, eight-
 Grand Prix cups, and a configure-then-buy tuner garage for three car bodies.
 
 Everything is built at runtime from code: cars, tracks, signage, music and sound
-effects. The only files it loads are two OFL fonts, an icon and three.js.
+effects. The only files it loads are three OFL fonts, an icon and three.js.
 
 ## Run it
 
@@ -22,6 +22,11 @@ node tools/neon-nitro-build.mjs          # -> dist/neon-nitro (about 2.6 MB)
 
 The build copies the game, puts three.js in `vendor/` and rewrites the import
 map. The resulting folder runs from any sub-path on any static host.
+
+For sandboxed hosts that only allow scripts from public CDNs, add `--hosted`.
+That writes `dist/neon-nitro-hosted`: one page body with the CSS and fonts
+inlined, three.js loaded from jsDelivr at the installed version, and `js/`
+alongside.
 
 ## Controls
 
@@ -102,14 +107,15 @@ Parts also nudge stats: top speed, acceleration, handling, drift and weight.
 | Neo Tokyo Tower | skyways around a megatower | spiral climb, laser gates, maglev, arcology tunnel, ONI-GEAR boss drone |
 
 Items: nitro, triple nitro, oil slick, shuriken, homing missile, daruma bomb,
-barrier, EMP, Ryu Rush (dragon autopilot) and Glitch Storm. Rolls are weighted by
-race position.
+barrier, EMP, Ryu Rush (dragon autopilot) and Glitch Storm. Glitch Storm hacks every
+racer ahead of you: they slow down and wobble, but they don't spin. Rolls are weighted
+by race position.
 
 ## Code map
 
 ```
 index.html            app shell + import map
-css/                  comic UI (Bangers + Dela Gothic One, OFL)
+css/                  comic UI (Bangers, Dela Gothic One, Noto Sans JP; OFL)
 js/main.js            Game: boot, loop, race flow, payouts, GP
 js/core/              input (keys/pad/touch/tilt), save, audio (WebAudio synth), data
 js/render/            toon shaders, post (ink outlines, bloom, speed lines), view, signs, showroom
@@ -123,12 +129,13 @@ dev/                  car.html, drive.html, render.html — dev viewers (not shi
 
 ## Tools
 
-- `node tools/neon-nitro-fonts.mjs` re-subsets Dela Gothic One to the Japanese
-  glyphs used in the sources. Run it after adding Japanese text.
-- `node tools/neon-nitro-build.mjs [out]` builds the static bundle described above.
+- `node tools/neon-nitro-fonts.mjs` re-subsets the two Japanese fonts to the glyphs
+  used in the sources. Dela Gothic One is for titles and signs; Noto Sans JP is for
+  small labels. Run it after adding Japanese text.
+- `node tools/neon-nitro-build.mjs [--hosted] [out]` builds the bundles described above.
 
 ## Credits
 
-- Fonts: Bangers and Dela Gothic One, SIL Open Font License (`assets/fonts/OFL.txt`).
+- Fonts: Bangers, Dela Gothic One and Noto Sans JP, SIL Open Font License (`assets/fonts/OFL.txt`).
 - three.js: MIT licence.
 - All other art, audio and code are generated procedurally by this project.

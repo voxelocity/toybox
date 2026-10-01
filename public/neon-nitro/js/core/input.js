@@ -2,6 +2,17 @@
 // Touch layout: left half = steering stick (drag), right side buttons for
 // drift / item / brake. Accelerate is automatic on touch (configurable).
 
+/**
+ * First connected gamepad, or null. getGamepads() throws when an embedding
+ * frame's permissions policy blocks the gamepad API, so never let it escape.
+ */
+export function connectedPad() {
+  try {
+    for (const p of navigator.getGamepads ? navigator.getGamepads() : []) if (p && p.connected) return p;
+  } catch { /* gamepad API blocked here */ }
+  return null;
+}
+
 const KEYS = {
   left: ['ArrowLeft', 'KeyA'], right: ['ArrowRight', 'KeyD'], up: ['ArrowUp', 'KeyW'], down: ['ArrowDown', 'KeyS'],
   drift: ['Space', 'ShiftLeft', 'ShiftRight', 'KeyK'], item: ['KeyE', 'KeyJ', 'ControlLeft', 'ControlRight', 'KeyX', 'Enter'],
@@ -15,7 +26,8 @@ export class Input {
     this.state = { steer: 0, throttle: 0, brake: 0, drift: false, driftPressed: false, driftReleased: false, item: false, itemBack: false, look: false, pause: false, respawn: false };
     this.touch = { active: false, steer: 0, drift: false, item: false, brake: false, gas: false, stickId: null, x0: 0, y0: 0 };
     this.autoAccel = true;
-    this.tilt = false;
+    this._tilt = false;
+    this._tiltBound = false;
     this.tiltSteer = 0;
     this.sensitivity = 1;
     this.enabled = true;
@@ -31,14 +43,6 @@ export class Input {
     });
     window.addEventListener('keyup', (e) => { this.down.delete(e.code); });
     window.addEventListener('blur', () => { this.down.clear(); });
-    window.addEventListener('deviceorientation', (e) => {
-      if (!this.tilt || e.gamma == null) return;
-      const landscape = Math.abs(window.orientation ?? screen.orientation?.angle ?? 0) === 90;
-      let v = landscape ? (e.beta ?? 0) : (e.gamma ?? 0);
-      const ang = window.orientation ?? screen.orientation?.angle ?? 0;
-      if (ang === -90 || ang === 270) v = -v;
-      this.tiltSteer = Math.max(-1, Math.min(1, v / 22));
-    });
   }
 
   _isGameKey(code) { for (const k in KEYS) if (KEYS[k].includes(code)) return true; return false; }
@@ -99,11 +103,24 @@ export class Input {
     zone.addEventListener('touchcancel', end, { passive: false });
   }
 
-  _pad() {
-    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
-    for (const p of pads) if (p && p.connected) return p;
-    return null;
+  /** Tilt steering. The sensor listener is only attached once tilt is switched on,
+   *  since embedding frames that block motion sensors log an error for it. */
+  get tilt() { return this._tilt; }
+  set tilt(on) {
+    this._tilt = !!on;
+    if (!on || this._tiltBound) return;
+    this._tiltBound = true;
+    window.addEventListener('deviceorientation', (e) => {
+      if (!this._tilt || e.gamma == null) return;
+      const landscape = Math.abs(window.orientation ?? screen.orientation?.angle ?? 0) === 90;
+      let v = landscape ? (e.beta ?? 0) : (e.gamma ?? 0);
+      const ang = window.orientation ?? screen.orientation?.angle ?? 0;
+      if (ang === -90 || ang === 270) v = -v;
+      this.tiltSteer = Math.max(-1, Math.min(1, v / 22));
+    });
   }
+
+  _pad() { return connectedPad(); }
 
   /** Call once per frame. */
   poll(dt) {

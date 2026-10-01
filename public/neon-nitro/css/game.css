@@ -1,8 +1,9 @@
 /* Neon Nitro — comic-book neon UI */
 :root {
+  color-scheme: dark;
   --ink: #140818; --paper: #fff8ea; --pink: #ff2d6f; --cyan: #20d8ff; --yellow: #ffe23b; --purple: #8a3dff; --orange: #ff8a1e; --green: #56f06b;
   --bg: #0b0616; --panel: #1a1030; --comic: 'Bangers', 'Impact', 'Arial Black', sans-serif; --jp: 'Dela Gothic One', 'Hiragino Sans', 'Yu Gothic', sans-serif;
-  --jp-small: 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', 'Yu Gothic UI', 'Yu Gothic', 'Meiryo', 'Noto Sans CJK JP', 'Noto Sans JP', 'Dela Gothic One', sans-serif;
+  --jp-small: 'Neon Nitro JP', 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', 'Yu Gothic UI', 'Yu Gothic', 'Meiryo', 'Noto Sans CJK JP', sans-serif;
   --ui: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --safe-l: env(safe-area-inset-left, 0px); --safe-r: env(safe-area-inset-right, 0px); --safe-t: env(safe-area-inset-top, 0px); --safe-b: env(safe-area-inset-bottom, 0px);
 }
