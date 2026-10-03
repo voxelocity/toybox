@@ -212,11 +212,14 @@ export class Renderer {
    * touched: the number of visible lights is part of every lit program's key,
    * so the programs must be built with exactly the lights used in play.
    * (compile() already reaches hidden meshes.) With KHR_parallel_shader_compile
-   * the compile runs off the main thread.
+   * the compile runs off the main thread. The warm-up frame is drawn without
+   * frustum culling: a program first drawn later (say a spent boost pad that
+   * was off screen here) would block that frame until the driver finishes it.
    */
   async warmUp(onProgress, prime) {
     const r = this.renderer;
     const undo = prime ? prime() : null;
+    const culled = [];
     try {
       if (r.compileAsync) {
         // the scene is drawn into the composer's linear HDR target, so compile that variant
@@ -231,7 +234,13 @@ export class Renderer {
     }
     onProgress && onProgress(0.8);
     await new Promise((res) => requestAnimationFrame(() => setTimeout(res, 0)));
-    try { this.render(0); } finally { if (undo) undo(); }
+    try {
+      this.scene.traverse((o) => { if (o.frustumCulled) { o.frustumCulled = false; culled.push(o); } });
+      this.render(0);
+    } finally {
+      for (const o of culled) o.frustumCulled = true;
+      if (undo) undo();
+    }
     onProgress && onProgress(1);
   }
 

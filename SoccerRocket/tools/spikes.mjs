@@ -49,7 +49,7 @@ function glTimers() {
     for (const n of names) {
       const f = P[n];
       if (typeof f !== 'function') continue;
-      P[n] = function (...a) { const t0 = performance.now(); try { return f.apply(this, a); } finally { const e = G.acc[n] || (G.acc[n] = [0, 0]); e[0]++; e[1] += performance.now() - t0; } };
+      P[n] = function (...a) { const t0 = performance.now(); try { return f.apply(this, a); } finally { const e = G.acc[n] || (G.acc[n] = [0, 0]); e[0]++; e[1] += performance.now() - t0; if (n === 'getProgramInfoLog' || n === 'linkProgram') (G[n === 'linkProgram' ? 'linked' : 'used'] || (G[n === 'linkProgram' ? 'linked' : 'used'] = [])).push(a[0]); } };
     }
   }
 }
@@ -57,6 +57,7 @@ function glTimers() {
 function harness({ seconds, realtime, sync }) {
   const app = window.app, R = app.renderer.renderer;
   const H = window.__spk = { frames: [], marks: [], done: false, error: null, programs0: R.info.programs.length };
+  window.__gl.linked = []; window.__gl.used = []; // boot-time compiles are not part of the run
   const STEP = 1000 / 60;
   const T = { tick: 0, events: 0, view: 0, render: 0, audio: 0, hud: 0, cam: 0 };
   const KEYS = Object.keys(T);
@@ -162,8 +163,13 @@ function harness({ seconds, realtime, sync }) {
     let gpu = 0;
     if (sync) { const g = R.getContext(); g.readPixels(0, 0, 1, 1, g.RGBA, g.UNSIGNED_BYTE, px); gpu = performance.now() - f1; }
     const heap1 = performance.memory ? performance.memory.usedJSHeapSize : 0;
+    // three.js links a program when a material first needs it and blocks on the
+    // driver's compile when it first draws with it (info log query): name both
+    const progName = (glp) => { const p = R.info.programs.find((q) => q.program === glp); return p ? `${p.name || p.type}#${p.id}` : '?'; };
+    const progs = [...(window.__gl.linked || []).map((g) => 'link:' + progName(g)), ...(window.__gl.used || []).map((g) => 'use:' + progName(g))].join(' ');
+    window.__gl.linked = []; window.__gl.used = [];
     const gl = Object.entries(window.__gl.acc).filter((e) => e[1][1] > 2).sort((a, b) => b[1][1] - a[1][1]).slice(0, 3).map(([n, [c, t]]) => `${n}x${c}=${t.toFixed(0)}`).join(' ');
-    H.frames.push([f1 - f0, interval, R.info.programs.length, ...KEYS.map((k) => T[k]), evTypes.join(' '), heap0, heap1, t1 - t0, app.match.state, gl, app.match.world.tick - tick0, gpu]);
+    H.frames.push([f1 - f0, interval, R.info.programs.length, ...KEYS.map((k) => T[k]), evTypes.join(' '), heap0, heap1, t1 - t0, app.match.state, gl, app.match.world.tick - tick0, gpu, progs]);
     if (H.frames.length >= seconds * 60) { H.done = true; mark('end'); }
   };
   return { programs: H.programs0, textures: R.info.memory.textures, geometries: R.info.memory.geometries };
@@ -175,13 +181,18 @@ const f1 = (x) => (Number.isFinite(x) ? x.toFixed(1) : '-');
 const KEYS = ['tick', 'events', 'view', 'render', 'audio', 'hud', 'cam'];
 
 function analyse(q, boot, H, gc) {
-  const F = H.frames.map((r) => ({ ms: r[0], interval: r[1], programs: r[2], ...Object.fromEntries(KEYS.map((k, i) => [k, r[3 + i]])), ev: r[10], heap0: r[11], heap1: r[12], script: r[13], state: r[14], gl: r[15], ticks: r[16], gpu: r[17] }));
+  const F = H.frames.map((r) => ({ ms: r[0], interval: r[1], programs: r[2], ...Object.fromEntries(KEYS.map((k, i) => [k, r[3 + i]])), ev: r[10], heap0: r[11], heap1: r[12], script: r[13], state: r[14], gl: r[15], ticks: r[16], gpu: r[17], progs: r[18] }));
   const ms = F.map((f) => f.ms);
   const skip = 30; // first frames after the match starts include one-off match setup
   const steady = ms.slice(skip);
   const out = { q, boot, frames: F.length, programs: { atReady: boot.programs, start: F[0] ? F[0].programs : NaN, end: F.length ? F[F.length - 1].programs : NaN, growth: [] } };
-  for (let i = 1; i < F.length; i++) if (F[i].programs !== F[i - 1].programs) out.programs.growth.push({ frame: i, from: F[i - 1].programs, to: F[i].programs, ms: +F[i].ms.toFixed(1), ev: F[i].ev, state: F[i].state });
+  for (let i = 1; i < F.length; i++) if (F[i].programs !== F[i - 1].programs) out.programs.growth.push({ frame: i, from: F[i - 1].programs, to: F[i].programs, ms: +F[i].ms.toFixed(1), ev: F[i].ev, state: F[i].state, progs: F[i].progs });
   out.all = { p50: pct(steady, 0.5), p95: pct(steady, 0.95), p99: pct(steady, 0.99), max: Math.max(...steady) };
+  // starting the match (new car views, first draw of their materials) is left out of the stats above
+  const setup = F.slice(0, skip).map((f, i) => ({ i, ...f })).sort((a, b) => b.ms - a.ms)[0];
+  if (setup) out.matchStart = { frame: setup.i, ms: +setup.ms.toFixed(1), script: +F[0].script.toFixed(1), ...Object.fromEntries(KEYS.map((k) => [k, +setup[k].toFixed(1)])), gl: setup.gl, ev: setup.ev, progs: setup.progs };
+  // every frame that linked or first drew with a shader program after boot
+  out.compiles = F.map((f, i) => ({ i, ...f })).filter((f) => f.progs).map((f) => ({ frame: f.i, ms: +f.ms.toFixed(1), state: f.state, ev: f.ev, progs: f.progs }));
   const iv = F.slice(skip).map((f) => f.interval), tk = F.slice(skip).map((f) => f.ticks);
   out.interval = { p50: pct(iv, 0.5), p95: pct(iv, 0.95), p99: pct(iv, 0.99), max: Math.max(...iv) };
   out.ticks = { p50: pct(tk, 0.5), max: Math.max(...tk), hist: tk.reduce((h, t) => { h[t] = (h[t] || 0) + 1; return h; }, {}) };
@@ -211,7 +222,7 @@ function analyse(q, boot, H, gc) {
   const thr = Math.max(p50 * 2.5, p50 + 25);
   out.spikeThreshold = thr;
   out.spikes = F.map((f, i) => ({ i, ...f })).filter((f) => f.i >= skip && f.ms > thr).sort((a, b) => b.ms - a.ms).slice(0, 12)
-    .map((f) => ({ frame: f.i, ms: +f.ms.toFixed(1), ...Object.fromEntries(KEYS.map((k) => [k, +f[k].toFixed(1)])), programs: f.programs, ev: f.ev, state: f.state, gl: f.gl, gpu: +f.gpu.toFixed(1) }));
+    .map((f) => ({ frame: f.i, ms: +f.ms.toFixed(1), ...Object.fromEntries(KEYS.map((k) => [k, +f[k].toFixed(1)])), programs: f.programs, ev: f.ev, state: f.state, gl: f.gl, gpu: +f.gpu.toFixed(1), progs: f.progs }));
   out.spikeCount = F.slice(skip).filter((f) => f.ms > thr).length;
   // GC (heap drops between frames, or a Chrome trace when --trace is on)
   let drops = 0;
@@ -226,7 +237,10 @@ function report(r) {
   const L = [];
   L.push(`\n=== q=${r.q}  frames=${r.frames}  boot ${r.boot.bootMs} ms  ===`);
   L.push(`programs: ${r.programs.atReady} at ready, ${r.programs.start} at match start, ${r.programs.end} at end  (${r.programs.growth.length} growth events)`);
-  for (const g of r.programs.growth.slice(0, 12)) L.push(`   frame ${g.frame}: ${g.from} -> ${g.to}  ${g.ms} ms  [${g.state}] ${g.ev}`);
+  for (const g of r.programs.growth.slice(0, 12)) L.push(`   frame ${g.frame}: ${g.from} -> ${g.to}  ${g.ms} ms  [${g.state}] ${g.ev}  ${g.progs || ''}`);
+  if (r.matchStart) { const s = r.matchStart; L.push(`match start: worst frame ${s.frame} ${s.ms} ms (startMatch() took ${s.script} ms)  tick ${s.tick} view ${s.view} render ${s.render} [${s.ev}]${s.gl ? '  gl: ' + s.gl : ''}${s.progs ? '  ' + s.progs : ''}`); }
+  L.push(`frames that linked or first used a shader program: ${r.compiles.length}`);
+  for (const c of r.compiles.slice(0, 12)) L.push(`   frame ${c.frame}: ${c.ms} ms [${c.state}] ${c.ev}  ${c.progs}`);
   L.push(`frame ms (main thread)   p50 ${f1(r.all.p50)}  p95 ${f1(r.all.p95)}  p99 ${f1(r.all.p99)}  max ${f1(r.all.max)}`);
   L.push(`  rAF interval            p50 ${f1(r.interval.p50)}  p95 ${f1(r.interval.p95)}  p99 ${f1(r.interval.p99)}  max ${f1(r.interval.max)}   ticks/frame ${JSON.stringify(r.ticks.hist)}`);
   L.push(`  event frames (${r.eventFrames.n})    p50 ${f1(r.eventFrames.p50)}  p95 ${f1(r.eventFrames.p95)}  p99 ${f1(r.eventFrames.p99)}  max ${f1(r.eventFrames.max)}`);

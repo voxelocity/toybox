@@ -50,27 +50,32 @@ export function lerpBall(a, b, t, out) {
   return out;
 }
 
-/** Records the last `seconds` of play at `hz` for goal replays. */
+/**
+ * Records the last `seconds` of play at `hz` for goal replays. Allocation
+ * free once warm: frames are ring slots, and the replay effects' events are
+ * copied into per-frame records (the simulation's event objects are not
+ * kept, so they may be pooled or reused).
+ */
 export class ReplayRecorder {
   constructor(seconds = 7, hz = 60) {
     this.hz = hz;
     this.cap = Math.ceil(seconds * hz);
     this.frames = [];
+    this.spare = []; // the frames handed to the previous replay, reused by the next recording
     this.head = 0;
     this.count = 0;
     this.acc = 0;
   }
 
-  // Frames are reused ring slots; only snapshot() gives them away.
   reset() { this.head = 0; this.count = 0; this.acc = 0; }
 
   record(world, dt, events) {
     this.acc += dt;
-    if (this.acc < 1 / this.hz - 1e-6) { if (events.length && this.count) this._lastFrame().events.push(...events); return; }
+    if (this.acc < 1 / this.hz - 1e-6) { if (events.length && this.count) this._keep(this._lastFrame(), events); return; }
     this.acc = 0;
     let f = this.frames[this.head];
     if (!f || f.cars.length !== world.cars.length) {
-      f = { time: 0, ball: makeBallState(), ballFrozen: false, cars: world.cars.map(() => makeCarState()), events: [] };
+      f = { time: 0, ball: makeBallState(), ballFrozen: false, cars: world.cars.map(() => makeCarState()), events: [], pool: [] };
       this.frames[this.head] = f;
     }
     f.time = world.time;
@@ -78,9 +83,23 @@ export class ReplayRecorder {
     f.ballFrozen = world.ball.frozen;
     for (let i = 0; i < world.cars.length; i++) captureCar(world.cars[i], f.cars[i]);
     f.events.length = 0;
-    for (let i = 0; i < events.length; i++) f.events.push(events[i]);
+    this._keep(f, events);
     this.head = (this.head + 1) % this.cap;
     this.count = Math.min(this.cap, this.count + 1);
+  }
+
+  /** Copies the events a replay shows (touches and bounces) into frame f. */
+  _keep(f, events) {
+    for (let i = 0; i < events.length; i++) {
+      const e = events[i];
+      if (e.type !== 'ballHit' && e.type !== 'ballBounce') continue;
+      let r = f.pool[f.events.length];
+      if (!r) { r = { type: '', car: null, point: new V3(), normal: new V3(), dv: 0, speed: 0, _played: null }; f.pool.push(r); }
+      r.type = e.type; r.car = e.car || null; r.dv = e.dv || 0; r.speed = e.speed || 0; r._played = null;
+      if (e.point) r.point.copy(e.point); else r.point.set(0, 0, 0);
+      if (e.normal) r.normal.copy(e.normal); else r.normal.set(0, 0, 1);
+      f.events.push(r);
+    }
   }
 
   _lastFrame() { return this.frames[(this.head - 1 + this.cap) % this.cap]; }
@@ -88,12 +107,15 @@ export class ReplayRecorder {
   /**
    * Frames from oldest to newest. The recorded frames are handed over rather
    * than deep-copied (8 s of 6 cars is ~30k objects: a 10-50 ms hitch as the
-   * goal replay starts) and the recorder starts over with fresh storage.
+   * goal replay starts). Recording continues into the frames of the previous
+   * replay, which has ended by the time play resumes.
    */
   snapshot() {
     const out = [];
     for (let i = 0; i < this.count; i++) out.push(this.frames[(this.head - this.count + i + this.cap * 2) % this.cap]);
-    this.frames = [];
+    const spare = this.spare;
+    this.spare = this.frames;
+    this.frames = spare;
     this.head = 0; this.count = 0; this.acc = 0;
     return out;
   }

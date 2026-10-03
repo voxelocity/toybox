@@ -53,7 +53,7 @@ export class SceneView {
     this.ball = new BallView(this.root, quality, custom.ball);
     this.ballShadow = shadowDecal(custom.ballShadow || radialShadowTexture(), 2.4, 2.4);
     this.root.add(this.ballShadow);
-    this.carShadowTex = custom.carShadow || null;
+    this.carShadowTex = custom.carShadow || radialShadowTexture(); // shared by every match's cars
     this.carShadows = [];
     this.effects = new Effects(this.root, quality, renderer);
     this.ballTrail = new Ribbon(this.root, 30, true);
@@ -66,15 +66,15 @@ export class SceneView {
 
   setPlayers(players, settings) {
     for (const c of this.cars) c.dispose();
-    for (const d of this.carShadows) this.root.remove(d);
+    // (the ball's shadow shares the decal shader, so disposing these keeps the program)
+    for (const d of this.carShadows) { this.root.remove(d); d.geometry.dispose(); d.material.dispose(); }
     this.cars = players.map((p) => new CarView(this.root, p.car, {
       style: p.style || 'striker', paint: p.paint || 0, accent: p.accent || 0, quality: this.q, effects: this.effects,
       isLocal: p.human, name: p.name, showName: !p.human, custom: this.custom.car,
     }));
     for (const c of this.cars) c.showHitbox(!!(settings && settings.showHitbox));
     // contact shadows under cars: always without shadow maps, subtle otherwise
-    const tex = this.carShadowTex || radialShadowTexture();
-    this.carShadows = players.map(() => { const d = shadowDecal(tex, 1.5, 2.1); this.root.add(d); return d; });
+    this.carShadows = players.map(() => { const d = shadowDecal(this.carShadowTex, 1.5, 2.1); this.root.add(d); return d; });
   }
 
   /**
