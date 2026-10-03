@@ -133,9 +133,10 @@ export function applyInvInertia(R, inv, v, out) {
 export function curve(pts, x) {
   if (x <= pts[0][0]) return pts[0][1];
   for (let i = 1; i < pts.length; i++) {
-    if (x <= pts[i][0]) {
-      const [x0, y0] = pts[i - 1], [x1, y1] = pts[i];
-      return y0 + (y1 - y0) * (x - x0) / (x1 - x0);
+    const b = pts[i];
+    if (x <= b[0]) {
+      const a = pts[i - 1]; // no destructuring: it allocates an iterator per call
+      return a[1] + (b[1] - a[1]) * (x - a[0]) / (b[0] - a[0]);
     }
   }
   return pts[pts.length - 1][1];

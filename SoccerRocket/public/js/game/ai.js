@@ -78,6 +78,7 @@ export class Bot {
     this.aerialTarget = new V3();
     this.aerialTime = 0;
     this.stuckTime = 0;
+    this.faceReverse = false;
     this.reverseTime = 0;
     this.noise = new V3();
     this.kickoffDone = false;
@@ -281,7 +282,7 @@ export class Bot {
     if (car.numContacts === 0 && !car.isJumping) { this.recover(c); this.unstuck(dt, c); return; }
 
     // turtle
-    if (car.numContacts === 0 && car.worldContact) { c.jump = Math.random() < 0.5; return; }
+    if (car.numContacts === 0 && car.worldContact.hasContact) { c.jump = Math.random() < 0.5; return; }
 
     if (this.reverseTime > 0) {
       this.reverseTime -= dt;
@@ -302,8 +303,13 @@ export class Bot {
     if (this.role === 'defend' && this.faceBall) {
       const loc = localOf(car, world.ball.pos, _l);
       const ang = Math.atan2(loc.y, loc.x);
-      c.steer = clamp(-ang * 2, -1, 1);
-      c.throttle = Math.abs(ang) > 0.4 ? (loc.x > 0 ? 0.4 : -0.4) : 0;
+      // turn on the spot: forward if the ball is ahead, reverse if it is
+      // behind (with hysteresis, or the car dithers when it is to the side)
+      const aa = Math.abs(ang);
+      this.faceReverse = aa > 0.4 && aa > Math.PI / 2 + (this.faceReverse ? -0.35 : 0.35);
+      c.throttle = aa > 0.4 ? (this.faceReverse ? -0.4 : 0.4) : 0;
+      // reversing turns the nose the other way
+      c.steer = clamp((this.faceReverse ? ang : -ang) * 2, -1, 1);
       c.boost = false;
     }
 
@@ -434,7 +440,7 @@ export class Bot {
     else this.stuckTime = 0;
     if (this.stuckTime > 1.2) { this.stuckTime = 0; this.reverseTime = 0.6; }
     // upside down on the ground: autoflip
-    if (car.numContacts === 0 && car.worldContact && car.up.z < -0.5) c.jump = !car.lastJump;
+    if (car.numContacts === 0 && car.worldContact.hasContact && car.up.z < -0.5) c.jump = !car.lastJump;
   }
 
   kickoff(ctx, dt) {

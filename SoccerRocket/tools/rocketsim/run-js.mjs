@@ -9,8 +9,9 @@
 // steer / yaw / roll inputs, which RL defines as "turn/roll to the right", are
 // negated when handed to our Car. Pitch, throttle and the buttons map 1:1.
 // Orientation: RocketSim Angle(yaw, pitch, roll).ToRotMat() is
-// Rz(yaw) * Ry(-pitch) * Rx(-roll); our Quat.setEuler(yaw, pitch, roll) is
-// Rz(yaw) * Ry(-pitch) * Rx(roll), hence setEuler(yaw, pitch, -roll).
+// Rz(yaw) * Ry(-pitch) * Rx(-roll) (btMatrix3x3::setEulerYPR); rotMatRS builds
+// it the same way in 32-bit floats, so that exact ties (roll = pi: which way
+// does the auto-flip go?) break the same way in both engines.
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -25,11 +26,28 @@ const K = await import(PHYS + 'constants.js');
 
 export const PARKED_BALL_POS = [0, 0, 1900];
 
+/**
+ * rs_oracle reuses one Arena per pad setting for every scenario of a run, and
+ * a fresh Arena differs on its first tick: Bullet's solver info still holds
+ * its default 1/60 s time step, which btVehicleRL's extra suspension pushback
+ * reads. These 1-tick scenarios go first in every oracle run, so each real
+ * scenario starts on an Arena that has stepped (like a running game, and
+ * like our World), whatever the batch order. Returns the files' paths.
+ */
+export function writeOracleWarmup(dir) {
+  const docs = [{ name: 'warmup', ticks: 1 }, { name: 'warmup_pads', ticks: 1, pads: true }];
+  return docs.map((d) => {
+    const f = path.join(dir, `${d.name}.json`);
+    fs.writeFileSync(f, JSON.stringify(d));
+    return f;
+  });
+}
+
 export const PHYSICS_DIR = PHYS;
 const v3 = (a, def) => (Array.isArray(a) && a.length >= 3 ? a : def);
 const arr = (v) => [v.x, v.y, v.z];
 
-function quatFromBasis(f, l, u, q) {
+export function quatFromBasis(f, l, u, q) {
   // rotation matrix columns f, l, u -> quaternion (Shepperd)
   const m00 = f[0], m10 = f[1], m20 = f[2];
   const m01 = l[0], m11 = l[1], m21 = l[2];
@@ -51,6 +69,21 @@ function quatFromBasis(f, l, u, q) {
   return q.normalize();
 }
 
+// Angle(yaw, pitch, roll).ToRotMat(): setEulerYPR(yaw, -pitch, -roll) ->
+// setEulerZYX(-roll, -pitch, yaw), in float like RocketSim; returns columns.
+export function rotMatRS(yaw, pitch, roll) {
+  const f = Math.fround;
+  const X = f(-f(roll)), Y = f(-f(pitch)), Z = f(yaw);
+  const ci = f(Math.cos(X)), cj = f(Math.cos(Y)), ch = f(Math.cos(Z));
+  const si = f(Math.sin(X)), sj = f(Math.sin(Y)), sh = f(Math.sin(Z));
+  const cc = f(ci * ch), cs = f(ci * sh), sc = f(si * ch), ss = f(si * sh);
+  return [
+    [f(cj * ch), f(cj * sh), -sj],
+    [f(f(sj * sc) - cs), f(f(sj * ss) + cc), f(cj * si)],
+    [f(f(sj * cc) + ss), f(f(sj * cs) - sc), f(cj * ci)],
+  ];
+}
+
 const norm = (a) => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
 const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 
@@ -68,7 +101,11 @@ export function cruiseThrottle(target, fwdSpeed) {
   return t < 0.01 ? 0.01 : t > 1 ? 1 : t;
 }
 
-export function runScenarioJS(sc) {
+/**
+ * opts.beforeStep(t, world, cars): called before tick t + 1 is simulated
+ * (after the controls are set), e.g. to overwrite body states (onestep.mjs).
+ */
+export function runScenarioJS(sc, opts = {}) {
   const ticks = sc.ticks ?? 120;
   const every = Math.max(1, sc.every ?? 1);
   const w = new World();
@@ -84,8 +121,9 @@ export function runScenarioJS(sc) {
     ball.vel.set(...v3(sc.ball.vel, [0, 0, 0]));
     ball.angVel.set(...v3(sc.ball.angVel, [0, 0, 0]));
   } else {
+    // Parked like rs_oracle: zero velocity, so it sleeps (RocketSim Arena::Step)
     ball.reset(...PARKED_BALL_POS);
-    ball.frozen = true;
+    ball.frozen = false;
   }
 
   const cars = [];
@@ -101,7 +139,8 @@ export function runScenarioJS(sc) {
       const u = norm(cross(f, l));
       quatFromBasis(f, l, u, car.quat);
     } else {
-      car.quat.setEuler(cj.yaw ?? 0, cj.pitch ?? 0, -(cj.roll ?? 0));
+      const [f, l, u] = rotMatRS(cj.yaw ?? 0, cj.pitch ?? 0, cj.roll ?? 0);
+      quatFromBasis(f, l, u, car.quat);
     }
     car.R.fromQuat(car.quat);
     car.vel.set(...v3(cj.vel, [0, 0, 0]));
@@ -156,6 +195,7 @@ export function runScenarioJS(sc) {
         jump: !!c.jump, boost: !!c.boost, handbrake: !!c.handbrake,
       });
     });
+    if (opts.beforeStep) opts.beforeStep(t, w, cars);
     const ev = w.step();
     for (const e of ev) {
       if (e.type === 'ballHit') events.push({ tick: t + 1, type: 'ballHit', car: cars.indexOf(e.car), extraVel: null });
@@ -174,6 +214,6 @@ if (isMain) {
   const scs = [];
   let asArray = docs.length > 1;
   for (const d of docs) { if (Array.isArray(d)) { asArray = true; scs.push(...d); } else scs.push(d); }
-  const res = scs.map(runScenarioJS);
+  const res = scs.map((s) => runScenarioJS(s));
   process.stdout.write(JSON.stringify(asArray ? res : res[0]) + '\n');
 }

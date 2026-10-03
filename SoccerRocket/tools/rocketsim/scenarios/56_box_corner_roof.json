@@ -1,0 +1,72 @@
+{
+ "name": "box_corner_roof",
+ "desc": "Car upside down tumbles into the corner (x, y > 0) at 1200 uu/s.",
+ "ticks": 120,
+ "cars": [
+  {
+   "team": 0,
+   "pos": [
+    3300,
+    4200,
+    120
+   ],
+   "yaw": 0.7853981633974483,
+   "boost": 0,
+   "roll": 3.141592653589793,
+   "vel": [
+    850,
+    850,
+    -200
+   ],
+   "angVel": [
+    1,
+    -1,
+    0.5
+   ],
+   "isOnGround": false
+  }
+ ],
+ "metrics": [
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "x",
+   "tick": 60,
+   "tol": 5,
+   "label": "car0.x@60"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "y",
+   "tick": 60,
+   "tol": 5,
+   "label": "car0.y@60"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "z",
+   "tick": 60,
+   "tol": 5,
+   "label": "car0.z@60"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "speed",
+   "tick": 90,
+   "tol": 30,
+   "label": "car0.speed@90"
+  },
+  {
+   "fn": "max",
+   "obj": "car0",
+   "field": "z",
+   "from": 0,
+   "to": 120,
+   "tol": 10,
+   "label": "max car0.z[0..120]"
+  }
+ ]
+}

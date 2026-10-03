@@ -273,6 +273,33 @@ add({
   metrics: [evTick('ballHit', 2), at('car0', 'x', 60, 10), at('car0', 'heading', 60, 0.02, 'heading (rad) @60'), afterEv('ballHit', 'ball', 'speed', 20, 30)],
 });
 
+// ---------------------------------------------------------------- hitbox vs arena
+// No wheel touches anything in these (car on its side or roof), so they test
+// the box-vs-mesh / box-vs-plane contacts, manifolds and solver on their own.
+// Orientations are tilted on purpose: a box face or edge landing exactly
+// parallel to a surface makes the contact point a tie that float rounding
+// decides (differently in each engine).
+add({
+  name: 'box_fillet_side', desc: 'Car on its side slides into the +x floor-to-wall fillet at 1500 uu/s (until a wheel touches).', ticks: 30,
+  cars: [car({ pos: [3500, 0, 70], yaw: 0.1, pitch: 0.12, roll: PI / 2 + 0.2, vel: [1500, 0, -300], angVel: [0, 0, 1.5], boost: 0, isOnGround: false })],
+  metrics: [at('car0', 'x', 30, 2), at('car0', 'z', 30, 2), at('car0', 'vx', 30, 15), at('car0', 'vz', 30, 15), at('car0', 'upz', 30, 0.02)],
+});
+add({
+  name: 'box_corner_roof', desc: 'Car upside down tumbles into the corner (x, y > 0) at 1200 uu/s.', ticks: 120,
+  cars: [car({ pos: [3300, 4200, 120], yaw: PI / 4, roll: PI, vel: [850, 850, -200], angVel: [1, -1, 0.5], boost: 0, isOnGround: false })],
+  metrics: [at('car0', 'x', 60, 5), at('car0', 'y', 60, 5), at('car0', 'z', 60, 5), at('car0', 'speed', 90, 30), max('car0', 'z', 0, 120, 10)],
+});
+add({
+  name: 'box_goalpost', desc: 'Car on its side hits the goal post edge at 1400 uu/s (until a wheel touches).', ticks: 35,
+  cars: [car({ pos: [960, 4700, 70], yaw: NORTH + 0.15, pitch: 0.1, roll: PI / 2 + 0.25, vel: [0, 1400, 0], boost: 0, isOnGround: false })],
+  metrics: [at('car0', 'vy', 35, 15), at('car0', 'vx', 35, 15), at('car0', 'y', 35, 2), at('car0', 'x', 35, 2), at('car0', 'upz', 35, 0.02)],
+});
+add({
+  name: 'box_ceiling_edge', desc: 'Car flying on its side into the ceiling-to-side-wall rounding at 1500 uu/s (until a wheel touches).', ticks: 32,
+  cars: [car({ pos: [3600, 0, 1800], yaw: 0.2, pitch: 0.15, roll: PI / 2 + 0.3, vel: [1200, 0, 900], boost: 0, isOnGround: false })],
+  metrics: [at('car0', 'vx', 32, 15), at('car0', 'vz', 32, 15), at('car0', 'x', 32, 2), at('car0', 'z', 32, 2), at('car0', 'upz', 32, 0.02)],
+});
+
 fs.mkdirSync(OUT, { recursive: true });
 for (const f of fs.readdirSync(OUT)) if (f.endsWith('.json')) fs.unlinkSync(path.join(OUT, f));
 scenarios.forEach((s, i) => {
