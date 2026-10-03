@@ -160,7 +160,7 @@ class App {
     this.mode = 'match';
     this.paused = false;
     this.cam.ballCam = s.camera.ballCamDefault;
-    this.cam.camDir = null;
+    this.cam.reset();
     this.hud.show(true);
     this.hud.setFreeplay(false);
     this.showTouch(true);
@@ -175,7 +175,7 @@ class App {
     this.mode = 'match';
     this.paused = false;
     this.cam.ballCam = s.camera.ballCamDefault;
-    this.cam.camDir = null;
+    this.cam.reset();
     this.hud.show(true);
     this.hud.setFreeplay(true);
     this.showTouch(true);
@@ -306,22 +306,12 @@ class App {
       return;
     }
     if (this.mode === 'menu' || m.state === 'ended' || !m.human) {
-      const b = this.renderBall.pos;
-      cam.updateBroadcast(dt, new THREE.Vector3(b.x, b.y, b.z));
+      cam.updateBroadcast(dt, this.renderBall.pos);
       return;
     }
-    const s = this.renderCars[m.players.indexOf(m.human)];
-    if (s.demoed) {
-      cam.updateOrbit(dt, new THREE.Vector3(s.pos.x, s.pos.y, 200), 900, 500);
-      return;
-    }
-    const R = new THREE.Quaternion(s.quat.x, s.quat.y, s.quat.z, s.quat.w);
-    const fwd = new THREE.Vector3(1, 0, 0).applyQuaternion(R);
-    const up = new THREE.Vector3(0, 0, 1).applyQuaternion(R);
-    cam.swivelX += ((this.input.swivel.x || 0) - cam.swivelX) * Math.min(1, dt * 8);
-    cam.swivelY += ((this.input.swivel.y || 0) - cam.swivelY) * Math.min(1, dt * 8);
-    const ballPos = new THREE.Vector3(this.renderBall.pos.x, this.renderBall.pos.y, this.renderBall.pos.z);
-    cam.updateChase(dt, new THREE.Vector3(s.pos.x, s.pos.y, s.pos.z), fwd, up, new THREE.Vector3(s.vel.x, s.vel.y, s.vel.z), s.onGround, ballPos, s.supersonic);
+    // Rocket League's player camera (render state + the live car's wheel contacts)
+    cam.rearView = !!this.input.actions.rearCam;
+    cam.updateCar(dt, this.renderCars[m.players.indexOf(m.human)], m.human.car, this.renderBall.pos, this.input.swivel);
   }
 
   syncPads() {
@@ -406,6 +396,7 @@ class App {
           this.audio.event(e, p);
           const a = m.playerOf(e.attacker), v = m.playerOf(e.victim);
           if (isHumanMatch) hud.feedItem(`<b>${esc(a ? a.name : '?')}</b> 💥 <b>${esc(v ? v.name : '?')}</b>`, e.attacker.team);
+          if (e.victim === humanCar) this.cam.demolisher = e.attacker;
           if (e.victim === humanCar || e.attacker === humanCar) { this.cam.addShake(0.6); this.input.rumble(1, 1, 400); }
           break;
         }

@@ -1,7 +1,7 @@
 // Menus: main, match setup, settings (video / camera / audio / controls),
 // how to play, pause and post-match. Fully usable with mouse, touch,
 // keyboard (arrows / enter / esc) and gamepad (d-pad / A / B).
-import { QUALITY_PRESETS, BINDING_LABELS, DEFAULT_BINDINGS, saveSettings } from '../settings.js';
+import { QUALITY_PRESETS, BINDING_LABELS, DEFAULT_BINDINGS, saveSettings, CAMERA_LIMITS, CAMERA_PRESETS, cameraPresetOf } from '../settings.js';
 import { BODY_STYLES, PAINTS, ACCENTS } from '../render/car-model.js';
 import { DIFFICULTY } from '../game/ai.js';
 import { scoreTable, esc } from './hud.js';
@@ -190,17 +190,40 @@ export class Menu {
   }
 
   tab_camera(b) {
+    // Rocket League's Settings > Camera: its presets, slider ranges and steps
     const c = this.s.camera, sv = () => this.save();
-    b.appendChild(this.slider('Field of view', 60, 110, 1, c.fov, (v) => `${v}°`, (v) => { c.fov = v; sv(); }));
-    b.appendChild(this.slider('Distance', 100, 400, 10, c.distance, (v) => v, (v) => { c.distance = v; sv(); }));
-    b.appendChild(this.slider('Height', 40, 200, 10, c.height, (v) => v, (v) => { c.height = v; sv(); }));
-    b.appendChild(this.slider('Angle', -15, 0, 1, c.angle, (v) => `${v}°`, (v) => { c.angle = v; sv(); }));
-    b.appendChild(this.slider('Stiffness', 0, 1, 0.05, c.stiffness, (v) => v.toFixed(2), (v) => { c.stiffness = v; sv(); }));
-    b.appendChild(this.slider('Swivel speed', 1, 10, 0.5, c.swivel, (v) => v.toFixed(1), (v) => { c.swivel = v; sv(); }));
-    b.appendChild(this.slider('Transition speed', 0.5, 2, 0.1, c.transition, (v) => v.toFixed(1), (v) => { c.transition = v; sv(); }));
+    const presets = [...Object.entries(CAMERA_PRESETS).map(([k, p]) => [k, p.label]), ['custom', 'Custom']];
+    const label = () => presets.find((p) => p[0] === cameraPresetOf(c))[1];
+    const rows = {};
+    const presetRow = this.cycle('Preset', presets, cameraPresetOf(c), (v) => {
+      if (v === 'custom') return;
+      for (const k of Object.keys(CAMERA_LIMITS)) {
+        c[k] = CAMERA_PRESETS[v][k];
+        rows[k].querySelector('input').value = c[k];
+        rows[k].querySelector('.num').textContent = rows[k]._fmt(c[k]);
+      }
+      sv();
+    });
+    b.appendChild(presetRow);
+    const slider = (k, name, fmt) => {
+      const [lo, hi, step] = CAMERA_LIMITS[k];
+      const row = this.slider(name, lo, hi, step, c[k], fmt, (v) => { c[k] = +v.toFixed(2); sv(); presetRow.querySelector('b').textContent = label(); });
+      row._fmt = fmt;
+      rows[k] = row;
+      b.appendChild(row);
+    };
+    slider('fov', 'Field of view', (v) => `${v}°`);
+    slider('distance', 'Distance', (v) => v);
+    slider('height', 'Height', (v) => v);
+    slider('angle', 'Angle', (v) => `${v}°`);
+    slider('stiffness', 'Stiffness', (v) => v.toFixed(2));
+    slider('swivel', 'Swivel speed', (v) => v.toFixed(1));
+    slider('transition', 'Transition speed', (v) => v.toFixed(1));
+    b.appendChild(this.toggle('Camera shake', c.shake, (v) => { c.shake = v; sv(); }));
+    b.appendChild(this.toggle('Invert swivel pitch', !!c.invertSwivel, (v) => { c.invertSwivel = v; sv(); }));
     b.appendChild(this.toggle('Ball cam on by default', c.ballCamDefault, (v) => { c.ballCamDefault = v; sv(); }));
     b.appendChild(this.cycle('Ball cam button', [[true, 'Toggle'], [false, 'Hold']], c.toggleBallCam, (v) => { c.toggleBallCam = v; sv(); }));
-    b.appendChild(this.toggle('Camera shake', c.shake, (v) => { c.shake = v; sv(); }));
+    b.appendChild(h('div', 'hint', 'Field of view is horizontal at 16:9; wider screens see more at the sides. Common pro settings: FOV 110, Distance 260–280, Height 90–110, Angle −3 to −5, Stiffness 0.35–0.50, Swivel 4–5.5, Transition 1.0–1.5.'));
   }
 
   tab_audio(b) {
