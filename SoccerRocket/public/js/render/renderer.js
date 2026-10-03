@@ -204,14 +204,19 @@ export class Renderer {
   }
 
   /**
-   * Compiles the shaders of everything in the scene, including effects that are
-   * hidden until used, then draws one frame (shadow and post-processing shaders).
-   * With KHR_parallel_shader_compile the compile runs off the main thread.
+   * Compiles every shader program the game uses while the loading screen is
+   * up. `prime` (optional) puts every normally idle effect on screen and
+   * returns a function that puts it back; the frame drawn here then also
+   * builds the variants drivers only compile on first draw (ANGLE/D3D input
+   * layouts, shadow and post-processing passes). Light visibility is never
+   * touched: the number of visible lights is part of every lit program's key,
+   * so the programs must be built with exactly the lights used in play.
+   * (compile() already reaches hidden meshes.) With KHR_parallel_shader_compile
+   * the compile runs off the main thread.
    */
-  async warmUp(onProgress) {
+  async warmUp(onProgress, prime) {
     const r = this.renderer;
-    const hidden = [];
-    this.scene.traverse((o) => { if (!o.visible) { hidden.push(o); o.visible = true; } });
+    const undo = prime ? prime() : null;
     try {
       if (r.compileAsync) {
         // the scene is drawn into the composer's linear HDR target, so compile that variant
@@ -223,17 +228,16 @@ export class Renderer {
       }
     } catch (e) {
       console.warn('shader pre-compile failed', e);
-    } finally {
-      for (const o of hidden) o.visible = false;
     }
     onProgress && onProgress(0.8);
     await new Promise((res) => requestAnimationFrame(() => setTimeout(res, 0)));
-    this.render(0);
+    try { this.render(0); } finally { if (undo) undo(); }
     onProgress && onProgress(1);
   }
 
-  doFlash(color, amount = 1) {
-    this.flashColor.set(color);
+  /** Screen flash; rgb is [r, g, b]. */
+  doFlash(rgb, amount = 1) {
+    this.flashColor.setRGB(rgb[0], rgb[1], rgb[2]);
     this.flash = Math.max(this.flash, amount);
   }
 }

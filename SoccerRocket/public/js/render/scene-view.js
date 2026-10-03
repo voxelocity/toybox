@@ -9,6 +9,9 @@ import { CarView } from './car-view.js';
 import { Ribbon } from './particles.js';
 import { S } from './convert.js';
 
+// ball trail colour: untouched, blue, orange
+const TRAIL_RGB = [[0.8, 0.85, 1], [0.35, 0.6, 1], [1, 0.6, 0.25]];
+
 function radialShadowTexture() {
   const c = document.createElement('canvas');
   c.width = c.height = 128;
@@ -109,8 +112,7 @@ export class SceneView {
     const speed = ballState.vel.len();
     this.ball.update(dt, speed);
     // ball trail when it's flying fast
-    const tc = lastTouchTeam === 0 ? [0.35, 0.6, 1] : lastTouchTeam === 1 ? [1, 0.6, 0.25] : [0.8, 0.85, 1];
-    this.ballTrail.color = tc;
+    this.ballTrail.color = TRAIL_RGB[lastTouchTeam + 1] || TRAIL_RGB[0];
     this.ballTrail.push(bm.position, ballState.visible && speed > 2200, this.time);
     this.ballTrail.update(this.time, this.camPos);
     // grass pushers: cars and ball near the floor
@@ -128,6 +130,31 @@ export class SceneView {
   }
 
   showHitboxes(v) { for (const c of this.cars) c.showHitbox(v); }
+
+  /**
+   * Shows every normally idle object (effects, boost flames, trails, hitboxes,
+   * spent boost pads) so a warm-up frame draws each of them once. Returns
+   * the function that restores everything.
+   */
+  prime() {
+    const undoFx = this.effects.prime(new THREE.Vector3(0, 1, 0));
+    const shown = [];
+    const show = (o) => { if (o && !o.visible) { o.visible = true; shown.push(o); } };
+    for (const c of this.cars) {
+      for (const f of c.flames) { show(f.outer); show(f.inner); }
+      for (const r of c.ribbons) show(r.mesh);
+      show(c.hitbox);
+    }
+    show(this.ballTrail.mesh);
+    const pads = this.arena.pads || [];
+    const spent = [pads.findIndex((p) => p.big), pads.findIndex((p) => !p.big)].filter((i) => i >= 0);
+    for (const i of spent) this.arena.setPadState(i, false);
+    return () => {
+      undoFx();
+      for (const o of shown) o.visible = false;
+      for (const i of spent) this.arena.setPadState(i, true);
+    };
+  }
 
   dispose() {
     this.scene.remove(this.root);

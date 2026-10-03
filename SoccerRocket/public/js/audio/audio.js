@@ -19,7 +19,8 @@ export class AudioEngine {
     this.duck = 1;
     this.paused = false;
     this.listenerVel = { x: 0, y: 0, z: 0 };
-    this.lastListener = null;
+    this.lastListener = { x: 0, y: 0, z: 0, set: false };
+    this._w = [0, 0, 0]; // engine crossfade weights (scratch)
   }
 
   /**
@@ -184,7 +185,7 @@ export class AudioEngine {
     let out = g;
     if (opts.pos) {
       const p = this.makePanner(opts.ref || 6);
-      setPannerPos(p, opts.pos);
+      setPannerPos(p, opts.pos.x, opts.pos.y, opts.pos.z);
       g.connect(p);
       out = p;
     }
@@ -286,11 +287,12 @@ export class AudioEngine {
     const cp = camera.position;
     const fwd = camera.getWorldDirection(this._f || (this._f = cp.clone()));
     const up = (this._u || (this._u = cp.clone())).set(0, 1, 0).applyQuaternion(camera.quaternion);
-    if (this.lastListener) {
-      const k = 1 / Math.max(dt, 1e-3);
-      this.listenerVel = { x: (cp.x - this.lastListener.x) * k * 100, y: -(cp.z - this.lastListener.z) * k * 100, z: (cp.y - this.lastListener.y) * k * 100 };
+    const LL = this.lastListener, LV = this.listenerVel;
+    if (LL.set) {
+      const k = 100 / Math.max(dt, 1e-3);
+      LV.x = (cp.x - LL.x) * k; LV.y = -(cp.z - LL.z) * k; LV.z = (cp.y - LL.y) * k;
     }
-    this.lastListener = { x: cp.x, y: cp.y, z: cp.z };
+    LL.x = cp.x; LL.y = cp.y; LL.z = cp.z; LL.set = true;
     if (L.positionX) {
       L.positionX.setTargetAtTime(cp.x, t, 0.02); L.positionY.setTargetAtTime(cp.y, t, 0.02); L.positionZ.setTargetAtTime(cp.z, t, 0.02);
       L.forwardX.setTargetAtTime(fwd.x, t, 0.02); L.forwardY.setTargetAtTime(fwd.y, t, 0.02); L.forwardZ.setTargetAtTime(fwd.z, t, 0.02);
@@ -321,7 +323,7 @@ export class AudioEngine {
       let doppler = 1;
       if (!v.local) {
         const px = s.pos.x * 0.01, py = s.pos.z * 0.01, pz = -s.pos.y * 0.01;
-        setPannerPos(v.panner, { x: px, y: py, z: pz });
+        setPannerPos(v.panner, px, py, pz);
         const dx = cp.x - px, dy = cp.y - py, dz = cp.z - pz;
         const d = Math.hypot(dx, dy, dz) || 1;
         // radial speed toward the listener, uu/s (physics axes)
@@ -330,12 +332,13 @@ export class AudioEngine {
       }
       // crossfade the three engine loops around the current firing frequency
       let wsum = 0;
-      const ws = v.engines.map((e) => { const w = Math.max(0, 1 - Math.abs(Math.log2(v.f / e.base)) / 1.2); wsum += w; return w; });
+      const ws = this._w, E = v.engines;
+      for (let k = 0; k < E.length; k++) { ws[k] = Math.max(0, 1 - Math.abs(Math.log2(v.f / E[k].base)) / 1.2); wsum += ws[k]; }
       const vol = alive ? (0.28 + 0.32 * throttle + (s.boosting ? 0.15 : 0)) * (v.local ? 0.75 : 1) : 0;
-      v.engines.forEach((e, k) => {
-        e.g.gain.setTargetAtTime(vol * ws[k] / Math.max(1e-3, wsum), t, 0.05);
-        e.src.playbackRate.setTargetAtTime(Math.min(4, (v.f / e.base) * doppler), t, 0.03);
-      });
+      for (let k = 0; k < E.length; k++) {
+        E[k].g.gain.setTargetAtTime(vol * ws[k] / Math.max(1e-3, wsum), t, 0.05);
+        E[k].src.playbackRate.setTargetAtTime(Math.min(4, (v.f / E[k].base) * doppler), t, 0.03);
+      }
       v.filter.frequency.setTargetAtTime(900 + 4200 * (0.3 + 0.7 * throttle) * (0.5 + speedFrac * 0.5), t, 0.05);
       v.boost.g.gain.setTargetAtTime(alive && s.boosting ? (v.local ? 0.55 : 0.8) : 0, t, s.boosting ? 0.02 : 0.08);
       v.boost.src.playbackRate.setTargetAtTime((s.supersonic ? 1.06 : 1) * doppler, t, 0.05);
@@ -406,9 +409,9 @@ export class AudioEngine {
   stopAll() { for (const v of this.carVoices) this.stopVoice(v); this.carVoices = []; }
 }
 
-function setPannerPos(p, pos) {
-  if (p.positionX) { p.positionX.value = pos.x; p.positionY.value = pos.y; p.positionZ.value = pos.z; }
-  else p.setPosition(pos.x, pos.y, pos.z);
+function setPannerPos(p, x, y, z) {
+  if (p.positionX) { p.positionX.value = x; p.positionY.value = y; p.positionZ.value = z; }
+  else p.setPosition(x, y, z);
 }
 
 /** Linear resample to the context rate (used for the reverb impulse). */

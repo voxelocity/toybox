@@ -61,7 +61,8 @@ export class ReplayRecorder {
     this.acc = 0;
   }
 
-  reset() { this.frames.length = 0; this.head = 0; this.count = 0; this.acc = 0; }
+  // Frames are reused ring slots; only snapshot() gives them away.
+  reset() { this.head = 0; this.count = 0; this.acc = 0; }
 
   record(world, dt, events) {
     this.acc += dt;
@@ -75,32 +76,25 @@ export class ReplayRecorder {
     f.time = world.time;
     captureBall(world.ball, f.ball);
     f.ballFrozen = world.ball.frozen;
-    world.cars.forEach((c, i) => captureCar(c, f.cars[i]));
-    f.events = events.slice();
+    for (let i = 0; i < world.cars.length; i++) captureCar(world.cars[i], f.cars[i]);
+    f.events.length = 0;
+    for (let i = 0; i < events.length; i++) f.events.push(events[i]);
     this.head = (this.head + 1) % this.cap;
     this.count = Math.min(this.cap, this.count + 1);
   }
 
   _lastFrame() { return this.frames[(this.head - 1 + this.cap) % this.cap]; }
 
-  /** Ordered copy of frames from oldest to newest. */
+  /**
+   * Frames from oldest to newest. The recorded frames are handed over rather
+   * than deep-copied (8 s of 6 cars is ~30k objects: a 10-50 ms hitch as the
+   * goal replay starts) and the recorder starts over with fresh storage.
+   */
   snapshot() {
     const out = [];
-    for (let i = 0; i < this.count; i++) {
-      const f = this.frames[(this.head - this.count + i + this.cap * 2) % this.cap];
-      out.push({
-        time: f.time, ballFrozen: f.ballFrozen,
-        ball: { pos: f.ball.pos.clone(), quat: f.ball.quat.clone(), vel: f.ball.vel.clone() },
-        cars: f.cars.map((c) => {
-          const s = makeCarState();
-          s.pos.copy(c.pos); s.quat.copy(c.quat); s.vel.copy(c.vel); s.up.copy(c.up);
-          Object.assign(s, { boosting: c.boosting, supersonic: c.supersonic, demoed: c.demoed, onGround: c.onGround, handbrake: c.handbrake, speed: c.speed, boost: c.boost });
-          s.wheels = c.wheels.map((w) => ({ ...w }));
-          return s;
-        }),
-        events: f.events.slice(),
-      });
-    }
+    for (let i = 0; i < this.count; i++) out.push(this.frames[(this.head - this.count + i + this.cap * 2) % this.cap]);
+    this.frames = [];
+    this.head = 0; this.count = 0; this.acc = 0;
     return out;
   }
 }
