@@ -48,8 +48,9 @@
 //       both as extForce*dt and extTorque*dt, like Bullet's F/m*dt and
 //       I^-1*tau*dt;
 //     - reads worldContact {hasContact, normal} (set by the previous tick's
-//       car-world contacts, before internal-edge correction) and clears
-//       worldContact.hasContact before returning;
+//       car-world contacts, before internal-edge correction) for auto-flip
+//       and auto-roll, and clears worldContact.hasContact (RocketSim clears
+//       it before the suspension / friction impulses);
 //     - pushes event names onto car.events ('jump', 'land', ...).
 //   (collision detection)  World's callbacks may set isDemoed / respawnTimer
 //     (car.demolish()), add bump velocity to velocityImpulseCache (V3, uu/s),
@@ -57,7 +58,8 @@
 //     ballHitTick (tick of the last extra ball impulse), isSupersonic,
 //     isOnGround and vel.
 //   (solve + integrate)  vel, angVel, pos, quat and R are updated.
-//   car.postTick(world, dt)  supersonic state, bump cooldown countdown.
+//   car.postTick(world, dt)  supersonic state, bump cooldown countdown, last
+//     controls (lastJump: a jump press is jump && !lastJump).
 //   car.finishPhysicsTick()  adds velocityImpulseCache to vel, clears it, then
 //     clamps vel (2300 uu/s) and angVel (5.5 rad/s): the only clamp.
 //   Neither post call runs for a demolished car; its body is frozen with the
