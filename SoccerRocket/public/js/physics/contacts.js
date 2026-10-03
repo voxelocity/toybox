@@ -29,6 +29,7 @@
 // dist < 0 is penetration.
 import * as K from './constants.js';
 import { NO_EDGE, TRI_V0V1_CONVEX, TRI_V1V2_CONVEX, TRI_V2V0_CONVEX, TRI_V0V1_SWAP, TRI_V1V2_SWAP, TRI_V2V0_SWAP } from './arena.js';
+import { rayCastConvex, castShape, SHAPE_SPHERE, SHAPE_BOX } from './simplex.js';
 
 export const KIND_BALL_WORLD = 1, KIND_CAR_WORLD = 2, KIND_CAR_BALL = 3, KIND_CAR_CAR = 4;
 // Hit body types returned by ray casts
@@ -324,18 +325,36 @@ export class Narrowphase {
       const s = den < 0 ? 1 : -1;
       out.nx = P.nx * s; out.ny = P.ny * s; out.nz = P.nz * s;
     }
-    // ball
-    const ball = world.ball;
-    if (ball && !ball.frozen && raySphere(ray, ball)) {
-      type = HIT_BALL; body = ball; out.nx = _rn[0]; out.ny = _rn[1]; out.nz = _rn[2];
+    // ball and car boxes: btSubsimplexConvexCast (simplex.js), which stops
+    // within 0.5 uu of the surface and never hits from inside
+    // (each skipped when the ray cannot come within 1 uu of the shape's AABB:
+    // the cast never reports a point farther than 0.5 uu)
+    ray.fraction = ray.best / ray.len;
+    const ball = world.ball, cs = castShape;
+    if (ball && !ball.frozen) {
+      const c = ball.pos, e = ball.radius + 1, B = _aabb;
+      B[0] = c.x; B[1] = c.y; B[2] = c.z; B[3] = e; B[4] = e; B[5] = e;
+      if (rayHitsAabb(ray, B)) {
+        cs.type = SHAPE_SPHERE; cs.cx = c.x; cs.cy = c.y; cs.cz = c.z; cs.r = ball.radius;
+        if (rayCastConvex(ray)) { type = HIT_BALL; body = ball; out.nx = ray.hnx; out.ny = ray.hny; out.nz = ray.hnz; }
+      }
     }
-    // cars (hitbox)
     const cars = world.cars;
     for (let i = 0; i < cars.length; i++) {
       const c = cars[i];
       if (c === ignore || !c.inWorld) continue;
-      if (rayBox(ray, c)) { type = HIT_CAR; body = c; out.nx = _rn[0]; out.ny = _rn[1]; out.nz = _rn[2]; }
+      boxFrame(c, _by);
+      const R = c.R.e, h = c.half, B = _aabb;
+      B[0] = _by.cx; B[1] = _by.cy; B[2] = _by.cz;
+      B[3] = Math.abs(R[0]) * h.x + Math.abs(R[1]) * h.y + Math.abs(R[2]) * h.z + 1;
+      B[4] = Math.abs(R[3]) * h.x + Math.abs(R[4]) * h.y + Math.abs(R[5]) * h.z + 1;
+      B[5] = Math.abs(R[6]) * h.x + Math.abs(R[7]) * h.y + Math.abs(R[8]) * h.z + 1;
+      if (!rayHitsAabb(ray, B)) continue;
+      cs.type = SHAPE_BOX; cs.cx = _by.cx; cs.cy = _by.cy; cs.cz = _by.cz; cs.R = R;
+      cs.hx = h.x; cs.hy = h.y; cs.hz = h.z;
+      if (rayCastConvex(ray)) { type = HIT_CAR; body = c; out.nx = ray.hnx; out.ny = ray.hny; out.nz = ray.hnz; }
     }
+    if (type === HIT_BALL || type === HIT_CAR) ray.best = ray.fraction * ray.len;
     if (type < 0) return false;
     if (type === HIT_CAR && body.isDemoed) return false;
     const best = ray.best;
@@ -352,7 +371,7 @@ export class Narrowphase {
 
 /** Scratch ray for Narrowphase.raycast / CollisionMesh.raycast (fields start as doubles). */
 export function makeRay() {
-  return { ox: 0.5, oy: 0.5, oz: 0.5, dx: 0.5, dy: 0.5, dz: 0.5, len: 0.5, best: 0.5 };
+  return { ox: 0.5, oy: 0.5, oz: 0.5, dx: 0.5, dy: 0.5, dz: 0.5, len: 0.5, best: 0.5, fraction: 0.5, hnx: 0.5, hny: 0.5, hnz: 0.5 };
 }
 
 export function makeRayHit() {
@@ -766,55 +785,23 @@ function setNormal(pt, n) {
 // ---------------------------------------------------------------------------
 // Rays vs ball / car boxes
 // ---------------------------------------------------------------------------
-// Bullet casts rays against convex shapes with btSubsimplexConvexCast, which
-// reports nothing for a ray that starts inside the shape (no separating
-// direction, zero normal), so a wheel inside another car or the ball sees
-// through it.
-const _rh = { t: 0, nx: 0, ny: 0, nz: 0, tri: -1 };
-const _rn = new Float64Array(3);
-// ray: makeRay(); ray.best is the closest hit so far and is lowered on a hit
-// (normal in _rn).
-function raySphere(ray, ball) {
-  const c = ball.pos, r = ball.radius, dx = ray.dx, dy = ray.dy, dz = ray.dz;
-  const ox = ray.ox - c.x, oy = ray.oy - c.y, oz = ray.oz - c.z;
-  const b = ox * dx + oy * dy + oz * dz, cc = ox * ox + oy * oy + oz * oz - r * r;
-  if (cc <= 0 || b > 0) return false; // starts inside, or moving away
-  const disc = b * b - cc;
-  if (disc < 0) return false;
-  const t = -b - Math.sqrt(disc);
-  if (t >= ray.best) return false;
-  const hx = ox + dx * t, hy = oy + dy * t, hz = oz + dz * t, l = Math.sqrt(hx * hx + hy * hy + hz * hz) || 1;
-  _rn[0] = hx / l; _rn[1] = hy / l; _rn[2] = hz / l;
-  ray.best = t;
+const _rh = { t: 0.5, nx: 0.5, ny: 0.5, nz: 0.5, tri: -1 };
+// Does the ray segment (up to its current closest hit) meet the box
+// B = [centre x, y, z, half extent x, y, z]? (slab test; an early-out only)
+const _aabb = new Float64Array(6);
+function rayHitsAabb(ray, B) {
+  let t0 = 0, t1 = ray.best;
+  const ex = B[3], ey = B[4], ez = B[5];
+  const ox = ray.ox - B[0], oy = ray.oy - B[1], oz = ray.oz - B[2];
+  const dx = ray.dx, dy = ray.dy, dz = ray.dz;
+  if (Math.abs(dx) < 1e-12) { if (ox < -ex || ox > ex) return false; }
+  else { let a = (-ex - ox) / dx, b = (ex - ox) / dx; if (a > b) { const t = a; a = b; b = t; } if (a > t0) t0 = a; if (b < t1) t1 = b; if (t0 > t1) return false; }
+  if (Math.abs(dy) < 1e-12) { if (oy < -ey || oy > ey) return false; }
+  else { let a = (-ey - oy) / dy, b = (ey - oy) / dy; if (a > b) { const t = a; a = b; b = t; } if (a > t0) t0 = a; if (b < t1) t1 = b; if (t0 > t1) return false; }
+  if (Math.abs(dz) < 1e-12) { if (oz < -ez || oz > ez) return false; }
+  else { let a = (-ez - oz) / dz, b = (ez - oz) / dz; if (a > b) { const t = a; a = b; b = t; } if (a > t0) t0 = a; if (b < t1) t1 = b; if (t0 > t1) return false; }
   return true;
 }
-const _lo = new Float64Array(3), _ld = new Float64Array(3), _he = new Float64Array(3);
-function rayBox(ray, car) {
-  boxFrame(car, _by);
-  const R = car.R.e, h = car.half, dx = ray.dx, dy = ray.dy, dz = ray.dz;
-  const ox = ray.ox - _by.cx, oy = ray.oy - _by.cy, oz = ray.oz - _by.cz;
-  // ray in box space
-  const lo = _lo, ld = _ld, he = _he;
-  lo[0] = R[0] * ox + R[3] * oy + R[6] * oz; lo[1] = R[1] * ox + R[4] * oy + R[7] * oz; lo[2] = R[2] * ox + R[5] * oy + R[8] * oz;
-  ld[0] = R[0] * dx + R[3] * dy + R[6] * dz; ld[1] = R[1] * dx + R[4] * dy + R[7] * dz; ld[2] = R[2] * dx + R[5] * dy + R[8] * dz;
-  he[0] = h.x; he[1] = h.y; he[2] = h.z;
-  const maxT = ray.best;
-  let tmin = 0, tmax = maxT, axis = -1, sgn = 0;
-  for (let i = 0; i < 3; i++) {
-    if (Math.abs(ld[i]) < 1e-12) { if (lo[i] < -he[i] || lo[i] > he[i]) return false; continue; }
-    const inv = 1 / ld[i];
-    let t1 = (-he[i] - lo[i]) * inv, t2 = (he[i] - lo[i]) * inv, s = -1;
-    if (t1 > t2) { const tmp = t1; t1 = t2; t2 = tmp; s = 1; }
-    if (t1 > tmin) { tmin = t1; axis = i; sgn = s; }
-    if (t2 < tmax) tmax = t2;
-    if (tmin > tmax) return false;
-  }
-  if (tmin >= maxT || axis < 0) return false; // beyond the closest hit, or starts inside
-  _rn[0] = R[axis] * sgn; _rn[1] = R[3 + axis] * sgn; _rn[2] = R[6 + axis] * sgn;
-  ray.best = tmin;
-  return true;
-}
-
 // ---------------------------------------------------------------------------
 // Box vs box: ODE dBoxBox2 as adapted in Bullet's btBoxBoxDetector
 // ---------------------------------------------------------------------------

@@ -32,8 +32,9 @@
 //       (closest hit on the arena, two-sided, the ball and other cars' boxes;
 //       hit = makeRayHit(): t, fraction, px..pz, normal nx..nz facing the
 //       ray, type HIT_STATIC / HIT_BALL / HIT_CAR, body, and that body's
-//       velocity at the hit point vx..vz; a ray that starts inside the ball or
-//       a car does not hit it, a demolished car blocks nothing). Note that
+//       velocity at the hit point vx..vz; the ball and car boxes are hit the
+//       way Bullet's btSubsimplexConvexCast does it, up to ~0.5 uu early and
+//       never from inside; a demolished car blocks nothing). Note that
 //       btVehicleRL's friction takes the ground body's velocity with the
 //       CAR-relative contact offset (getVelocityInLocalPoint quirk); use
 //       hit.body for that, vx..vz is the true point velocity;
