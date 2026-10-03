@@ -2,6 +2,7 @@
 // Run: node tests/physics.mjs
 import { World } from '../public/js/physics/world.js';
 import * as K from '../public/js/physics/constants.js';
+import { rng } from '../public/js/physics/math.js';
 
 let fails = 0;
 const results = [];
@@ -132,32 +133,33 @@ const run = (w, secs, fn) => { const n = Math.round(secs * K.TICK_RATE); for (le
   check('car upright after flip + settle', (run(w, 1.5), car.up.z), 0.9, 1.01);
 }
 
-// 9. Turning circle at low speed vs documented curvature
+// 9. Turning circle vs documented (steady-state) max curvature. The yaw rate
+// takes ~0.5 s to build up, so measure from 0.5 s to 1.5 s of full steer.
 for (const target of [500, 1000, 1500, 2200]) {
   const { w, car } = freshCar(-1500, -4300);
   w.unlimitedBoost = true;
-  car.controls.throttle = 1;
-  // accelerate to target
-  let reached = false;
-  run(w, 4, () => {
-    const v = car.vel.len();
-    if (!reached && v >= target) reached = true;
-    car.controls.throttle = reached ? (v > target ? 0.01 : 1) : 1;
-    car.controls.boost = target > 1400 && v < target - 5;
-  });
-  car.controls.steer = 1;
-  let yaw0 = Math.atan2(car.forward.y, car.forward.x), dyaw = 0, prev = yaw0, vSum = 0, n = 0;
-  run(w, 1.0, () => {
-    const y = Math.atan2(car.forward.y, car.forward.x);
-    let d = y - prev; if (d > Math.PI) d -= 2 * Math.PI; if (d < -Math.PI) d += 2 * Math.PI;
-    dyaw += d; prev = y;
+  const hold = () => {
     const v = car.vel.len();
     car.controls.throttle = v > target ? 0.01 : 1;
     car.controls.boost = target > 1400 && v < target - 5;
-    vSum += v; n++;
+  };
+  // accelerate to target, then cruise for 0.25 s
+  car.controls.throttle = 1;
+  car.controls.boost = target > 1400;
+  for (let i = 0; i < 4 * K.TICK_RATE && car.vel.len() < target; i++) w.step();
+  run(w, 0.25, hold);
+  car.controls.steer = 1;
+  let prev = Math.atan2(car.forward.y, car.forward.x), dyaw = 0, vSum = 0, n = 0;
+  run(w, 1.5, (t) => {
+    hold();
+    if (t < 0.5) { prev = Math.atan2(car.forward.y, car.forward.x); return; }
+    const y = Math.atan2(car.forward.y, car.forward.x);
+    let d = y - prev; if (d > Math.PI) d -= 2 * Math.PI; if (d < -Math.PI) d += 2 * Math.PI;
+    dyaw += d; prev = y;
+    vSum += car.vel.len(); n++;
   });
   const vAvg = vSum / n;
-  const curvature = Math.abs(dyaw) / (vAvg * 1.0);
+  const curvature = Math.abs(dyaw) / (vAvg * n / K.TICK_RATE);
   const doc = { 500: 0.00398, 1000: 0.00235, 1500: 0.001375, 2200: 0.000913 }[target];
   check(`turn curvature @${target}`, curvature * 1000, doc * 1000 * 0.93, doc * 1000 * 1.07, ' /1000uu');
 }
@@ -295,9 +297,9 @@ for (const target of [500, 1000, 1500, 2200]) {
   const w = new World();
   w.goalsEnabled = false;
   let worst = -1e9, nan = false;
-  const rnd = (a) => (Math.random() * 2 - 1) * a;
+  const R = rng(19), rnd = (a) => (R() * 2 - 1) * a;
   for (let k = 0; k < 40; k++) {
-    w.ball.reset(rnd(3000), rnd(4000), 100 + Math.random() * 1500);
+    w.ball.reset(rnd(3000), rnd(4000), 100 + R() * 1500);
     w.ball.vel.set(rnd(6000), rnd(6000), rnd(6000)).clampLength(6000);
     run(w, 3, () => {
       const p = w.ball.pos;
@@ -314,30 +316,43 @@ for (const target of [500, 1000, 1500, 2200]) {
   check('ball no NaN', nan ? 1 : 0, 0, 0);
 }
 
-// 20. Car chaos: random inputs, 6 cars, nothing escapes or NaNs
+// 20. Car chaos: random inputs, 6 cars, nothing escapes or NaNs. Seeded, so a
+// failure reproduces: CHAOS_SEEDS=50 node tests/physics.mjs sweeps more seeds.
+// "Outside" is the signed distance of the car origin to the playable volume,
+// the field box (with the corner bevels) united with the two goal boxes: a car
+// inside a goal with its underside against the goal's side wall has its
+// origin 1.4 uu below the hitbox floor, i.e. just past |x| = 893, and is not
+// outside the field.
 {
-  const w = new World();
-  w.goalsEnabled = false;
-  w.unlimitedBoost = true;
-  for (let i = 0; i < 6; i++) w.addCar(i % 2);
-  w.setupKickoff();
-  let worst = -1e9, nan = false;
-  const rnd = () => Math.random() * 2 - 1;
-  run(w, 60, (t) => {
-    if (Math.floor(t * 120) % 30 === 0) for (const c of w.cars) {
-      Object.assign(c.controls, { throttle: rnd() > -0.5 ? 1 : -1, steer: rnd(), pitch: rnd(), yaw: rnd(), roll: rnd() * (Math.random() < 0.3 ? 1 : 0), jump: Math.random() < 0.3, boost: Math.random() < 0.6, handbrake: Math.random() < 0.2 });
-    }
-    for (const c of w.cars) {
-      const p = c.pos;
-      if (!Number.isFinite(p.x + p.y + p.z + c.quat.w)) nan = true;
-      const outY = Math.abs(p.x) < 893 ? Math.abs(p.y) - 6000 : Math.abs(p.y) - 5120;
-      worst = Math.max(worst, Math.abs(p.x) - 4096, outY, -p.z, p.z - 2044);
-    }
-  });
+  const seeds = Math.max(1, +(process.env.CHAOS_SEEDS || 3));
+  let worst = -1e9, worstSeed = 0, nan = false;
+  for (let seed = 1; seed <= seeds; seed++) {
+    const w = new World({ seed });
+    w.goalsEnabled = false;
+    w.unlimitedBoost = true;
+    for (let i = 0; i < 6; i++) w.addCar(i % 2);
+    w.setupKickoff();
+    const R = rng(seed * 7919 + 1), rnd = () => R() * 2 - 1;
+    run(w, 60, (t) => {
+      if (Math.floor(t * 120) % 30 === 0) for (const c of w.cars) {
+        Object.assign(c.controls, { throttle: rnd() > -0.5 ? 1 : -1, steer: rnd(), pitch: rnd(), yaw: rnd(), roll: rnd() * (R() < 0.3 ? 1 : 0), jump: R() < 0.3, boost: R() < 0.6, handbrake: R() < 0.2 });
+      }
+      for (const c of w.cars) {
+        const p = c.pos;
+        if (!Number.isFinite(p.x + p.y + p.z + c.quat.w)) nan = true;
+        const ax = Math.abs(p.x), ay = Math.abs(p.y);
+        const field = Math.max(ax - K.ARENA.X, ay - K.ARENA.Y, (ax + ay - K.ARENA.CORNER) * Math.SQRT1_2, -p.z, p.z - K.ARENA.Z);
+        const goal = Math.max(ax - K.ARENA.GOAL_HALF_W, ay - (K.ARENA.Y + K.ARENA.GOAL_DEPTH), -p.z, p.z - K.ARENA.GOAL_H);
+        const out = Math.min(field, goal);
+        if (out > worst) { worst = out; worstSeed = seed; }
+      }
+    });
+  }
+  info(`car chaos: ${seeds} seeds x 60 s, worst seed`, worstSeed);
   // Discrete collision like RocketSim: a car can sink up to one tick of travel
   // (2300 / 120 = 19 uu) before the solver pushes it out; the hitbox bottom
-  // is 1.5 uu above the origin. Anything beyond that would be a real escape.
-  check('cars never escape (origin vs surfaces)', worst, -1e9, K.CAR_MAX_SPEED * K.DT, ' uu');
+  // is 1.4 uu above the origin. Anything beyond that would be a real escape.
+  check('cars never escape (origin vs playable volume)', worst, -1e9, K.CAR_MAX_SPEED * K.DT, ' uu');
   check('cars no NaN', nan ? 1 : 0, 0, 0);
 }
 
