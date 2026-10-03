@@ -1,0 +1,52 @@
+{
+ "name": "car_rest_settle",
+ "desc": "Car dropped from z=30 settles on 4 wheels (RL rest z ~17.01, nose -0.55 deg).",
+ "ticks": 240,
+ "cars": [
+  {
+   "team": 0,
+   "pos": [
+    0,
+    0,
+    30
+   ],
+   "yaw": 1.5707963267948966,
+   "boost": 100
+  }
+ ],
+ "metrics": [
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "z",
+   "tick": 240,
+   "tol": 0.3,
+   "label": "car0.z@240"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "wheels",
+   "tick": 240,
+   "tol": 0,
+   "label": "car0.wheels@240"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "pitchDeg",
+   "tick": 240,
+   "tol": 0.1,
+   "label": "car0.pitchDeg@240"
+  },
+  {
+   "fn": "min",
+   "obj": "car0",
+   "field": "z",
+   "from": 0,
+   "to": 240,
+   "tol": 0.5,
+   "label": "min car0.z[0..240]"
+  }
+ ]
+}

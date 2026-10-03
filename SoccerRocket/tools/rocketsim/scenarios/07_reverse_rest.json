@@ -1,0 +1,57 @@
+{
+ "name": "reverse_rest",
+ "desc": "Full reverse throttle from rest for 3 s.",
+ "ticks": 360,
+ "cars": [
+  {
+   "team": 0,
+   "pos": [
+    0,
+    2000,
+    17
+   ],
+   "yaw": 1.5707963267948966,
+   "boost": 100,
+   "controls": [
+    {
+     "tick": 0,
+     "throttle": -1
+    }
+   ]
+  }
+ ],
+ "metrics": [
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "fwdSpeed",
+   "tick": 30,
+   "tol": 15,
+   "label": "car0.fwdSpeed@30"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "fwdSpeed",
+   "tick": 60,
+   "tol": 15,
+   "label": "car0.fwdSpeed@60"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "fwdSpeed",
+   "tick": 120,
+   "tol": 15,
+   "label": "car0.fwdSpeed@120"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "fwdSpeed",
+   "tick": 360,
+   "tol": 15,
+   "label": "car0.fwdSpeed@360"
+  }
+ ]
+}

@@ -1,0 +1,131 @@
+{
+ "name": "flip_back",
+ "desc": "Short jump then backward dodge (pitch +1).",
+ "ticks": 240,
+ "cars": [
+  {
+   "team": 0,
+   "pos": [
+    0,
+    0,
+    17
+   ],
+   "yaw": 1.5707963267948966,
+   "boost": 100,
+   "controls": [
+    {
+     "tick": 0,
+     "jump": true
+    },
+    {
+     "tick": 6,
+     "jump": false
+    },
+    {
+     "tick": 12,
+     "jump": true,
+     "pitch": 1
+    },
+    {
+     "tick": 14,
+     "jump": false
+    }
+   ]
+  }
+ ],
+ "metrics": [
+  {
+   "fn": "max",
+   "obj": "car0",
+   "field": "hspeed",
+   "from": 12,
+   "to": 200,
+   "tol": 10,
+   "label": "max car0.hspeed[12..200]"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "hspeed",
+   "tick": 20,
+   "tol": 10,
+   "label": "car0.hspeed@20"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "vz",
+   "tick": 30,
+   "tol": 10,
+   "label": "car0.vz@30"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "angSpeed",
+   "tick": 20,
+   "tol": 0.1,
+   "label": "car0.angSpeed@20"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "angSpeed",
+   "tick": 60,
+   "tol": 0.2,
+   "label": "car0.angSpeed@60"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "upz",
+   "tick": 40,
+   "tol": 0.05,
+   "label": "car0.upz@40"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "upz",
+   "tick": 70,
+   "tol": 0.05,
+   "label": "car0.upz@70"
+  },
+  {
+   "fn": "when",
+   "obj": "car0",
+   "field": "onGround",
+   "op": ">=",
+   "value": 1,
+   "from": 20,
+   "tol": 3,
+   "label": "car0 lands (tick, after 20)"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "upz",
+   "tick": 240,
+   "tol": 0.05,
+   "label": "car0.upz@240"
+  },
+  {
+   "fn": "max",
+   "obj": "car0",
+   "field": "z",
+   "from": 0,
+   "to": 240,
+   "tol": 3,
+   "label": "max car0.z[0..240]"
+  },
+  {
+   "fn": "max",
+   "obj": "car0",
+   "field": "z",
+   "from": 14,
+   "to": 240,
+   "tol": 3,
+   "label": "max z after dodge"
+  }
+ ]
+}

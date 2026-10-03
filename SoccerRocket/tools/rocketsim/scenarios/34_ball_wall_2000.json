@@ -1,0 +1,62 @@
+{
+ "name": "ball_wall_2000",
+ "desc": "Ball thrown into the +x side wall at 2000 uu/s.",
+ "ticks": 150,
+ "ball": {
+  "pos": [
+   2500,
+   0,
+   400
+  ],
+  "vel": [
+   2000,
+   0,
+   0
+  ]
+ },
+ "metrics": [
+  {
+   "fn": "when",
+   "obj": "ball",
+   "field": "vx",
+   "op": "<=",
+   "value": 0,
+   "from": 0,
+   "tol": 1,
+   "label": "wall bounce tick"
+  },
+  {
+   "fn": "at",
+   "obj": "ball",
+   "field": "vx",
+   "tick": 120,
+   "tol": 10,
+   "label": "ball.vx@120"
+  },
+  {
+   "fn": "at",
+   "obj": "ball",
+   "field": "vz",
+   "tick": 120,
+   "tol": 10,
+   "label": "ball.vz@120"
+  },
+  {
+   "fn": "at",
+   "obj": "ball",
+   "field": "angSpeed",
+   "tick": 120,
+   "tol": 0.1,
+   "label": "ball.angSpeed@120"
+  },
+  {
+   "fn": "max",
+   "obj": "ball",
+   "field": "x",
+   "from": 0,
+   "to": 150,
+   "tol": 1,
+   "label": "max ball.x[0..150]"
+  }
+ ]
+}

@@ -1,0 +1,68 @@
+{
+ "name": "ball_roll_1500",
+ "desc": "Ball on the floor rolling at 1500 uu/s (drag + friction; slide to roll).",
+ "ticks": 480,
+ "ball": {
+  "pos": [
+   0,
+   -3000,
+   93.15
+  ],
+  "vel": [
+   0,
+   1500,
+   0
+  ]
+ },
+ "metrics": [
+  {
+   "fn": "at",
+   "obj": "ball",
+   "field": "speed",
+   "tick": 30,
+   "tol": 5,
+   "label": "ball.speed@30"
+  },
+  {
+   "fn": "at",
+   "obj": "ball",
+   "field": "speed",
+   "tick": 120,
+   "tol": 5,
+   "label": "ball.speed@120"
+  },
+  {
+   "fn": "at",
+   "obj": "ball",
+   "field": "speed",
+   "tick": 480,
+   "tol": 5,
+   "label": "ball.speed@480"
+  },
+  {
+   "fn": "at",
+   "obj": "ball",
+   "field": "angSpeed",
+   "tick": 30,
+   "tol": 0.1,
+   "label": "ball.angSpeed@30"
+  },
+  {
+   "fn": "at",
+   "obj": "ball",
+   "field": "angSpeed",
+   "tick": 120,
+   "tol": 0.1,
+   "label": "ball.angSpeed@120"
+  },
+  {
+   "fn": "max",
+   "obj": "ball",
+   "field": "z",
+   "from": 0,
+   "to": 480,
+   "tol": 1,
+   "label": "max ball.z[0..480]"
+  }
+ ]
+}

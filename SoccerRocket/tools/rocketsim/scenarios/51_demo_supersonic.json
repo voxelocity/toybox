@@ -1,0 +1,71 @@
+{
+ "name": "demo_supersonic",
+ "desc": "Supersonic blue car (2300) hits a stationary orange car: demolition.",
+ "ticks": 120,
+ "unlimitedBoost": true,
+ "cars": [
+  {
+   "team": 0,
+   "pos": [
+    0,
+    -1200,
+    17
+   ],
+   "yaw": 1.5707963267948966,
+   "boost": 100,
+   "vel": [
+    0,
+    2300,
+    0
+   ],
+   "controls": [
+    {
+     "tick": 0,
+     "throttle": 1,
+     "boost": true
+    }
+   ]
+  },
+  {
+   "team": 1,
+   "pos": [
+    0,
+    0,
+    17
+   ],
+   "yaw": 0,
+   "boost": 100
+  }
+ ],
+ "metrics": [
+  {
+   "fn": "eventTick",
+   "type": "demo",
+   "tol": 1,
+   "label": "first demo tick"
+  },
+  {
+   "fn": "eventCount",
+   "type": "demo",
+   "tol": 0,
+   "label": "demo count"
+  },
+  {
+   "fn": "at",
+   "obj": "car1",
+   "field": "demoed",
+   "tick": 120,
+   "tol": 0,
+   "label": "car1.demoed@120"
+  },
+  {
+   "fn": "afterEvent",
+   "type": "demo",
+   "obj": "car0",
+   "field": "speed",
+   "dt": 10,
+   "tol": 30,
+   "label": "car0.speed 10t after demo"
+  }
+ ]
+}

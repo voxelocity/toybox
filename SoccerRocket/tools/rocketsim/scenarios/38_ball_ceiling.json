@@ -1,0 +1,36 @@
+{
+ "name": "ball_ceiling",
+ "desc": "Ball fired straight up into the ceiling at 3000 uu/s.",
+ "ticks": 120,
+ "ball": {
+  "pos": [
+   0,
+   0,
+   500
+  ],
+  "vel": [
+   0,
+   0,
+   3000
+  ]
+ },
+ "metrics": [
+  {
+   "fn": "max",
+   "obj": "ball",
+   "field": "z",
+   "from": 0,
+   "to": 120,
+   "tol": 1,
+   "label": "max ball.z[0..120]"
+  },
+  {
+   "fn": "at",
+   "obj": "ball",
+   "field": "vz",
+   "tick": 60,
+   "tol": 10,
+   "label": "ball.vz@60"
+  }
+ ]
+}

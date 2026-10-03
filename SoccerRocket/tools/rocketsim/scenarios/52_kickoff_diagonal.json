@@ -1,0 +1,117 @@
+{
+ "name": "kickoff_diagonal",
+ "desc": "Both cars from the diagonal kickoff spots aimed at the ball, throttle + boost (33.3 spawn boost) for 3 s.",
+ "ticks": 360,
+ "ball": {
+  "pos": [
+   0,
+   0,
+   93.15
+  ]
+ },
+ "cars": [
+  {
+   "team": 0,
+   "pos": [
+    -2048,
+    -2560,
+    17
+   ],
+   "yaw": 0.8960553845713439,
+   "boost": 33.333333333333336,
+   "controls": [
+    {
+     "tick": 0,
+     "throttle": 1,
+     "boost": true
+    }
+   ]
+  },
+  {
+   "team": 1,
+   "pos": [
+    2048,
+    2560,
+    17
+   ],
+   "yaw": 4.037648038161137,
+   "boost": 33.333333333333336,
+   "controls": [
+    {
+     "tick": 0,
+     "throttle": 1,
+     "boost": true
+    }
+   ]
+  }
+ ],
+ "metrics": [
+  {
+   "fn": "eventTick",
+   "type": "ballHit",
+   "tol": 2,
+   "label": "first ballHit tick"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "speed",
+   "tick": 120,
+   "tol": 20,
+   "label": "car0.speed@120"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "boost",
+   "tick": 120,
+   "tol": 0.5,
+   "label": "car0.boost@120"
+  },
+  {
+   "fn": "afterEvent",
+   "type": "ballHit",
+   "obj": "ball",
+   "field": "speed",
+   "dt": 30,
+   "tol": 50,
+   "label": "ball.speed 30t after ballHit"
+  },
+  {
+   "fn": "afterEvent",
+   "type": "ballHit",
+   "obj": "ball",
+   "field": "z",
+   "dt": 30,
+   "tol": 30,
+   "label": "ball.z 30t after ballHit"
+  },
+  {
+   "fn": "afterEvent",
+   "type": "ballHit",
+   "obj": "car0",
+   "field": "speed",
+   "dt": 30,
+   "tol": 50,
+   "label": "car0.speed 30t after ballHit"
+  },
+  {
+   "fn": "afterEvent",
+   "type": "ballHit",
+   "obj": "car1",
+   "field": "speed",
+   "dt": 30,
+   "tol": 50,
+   "label": "car1.speed 30t after ballHit"
+  },
+  {
+   "fn": "max",
+   "obj": "ball",
+   "field": "z",
+   "from": 0,
+   "to": 360,
+   "tol": 30,
+   "label": "max ball.z[0..360]"
+  }
+ ]
+}

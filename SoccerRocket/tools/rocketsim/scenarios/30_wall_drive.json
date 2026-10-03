@@ -1,0 +1,83 @@
+{
+ "name": "wall_drive",
+ "desc": "Drive at the +x side wall with throttle+boost 0.75 s then throttle only; up the ramp and onto the wall.",
+ "ticks": 360,
+ "cars": [
+  {
+   "team": 0,
+   "pos": [
+    2800,
+    0,
+    17
+   ],
+   "yaw": 0,
+   "boost": 100,
+   "controls": [
+    {
+     "tick": 0,
+     "throttle": 1,
+     "boost": true
+    },
+    {
+     "tick": 90,
+     "boost": false
+    }
+   ]
+  }
+ ],
+ "metrics": [
+  {
+   "fn": "max",
+   "obj": "car0",
+   "field": "z",
+   "from": 0,
+   "to": 360,
+   "tol": 20,
+   "label": "max car0.z[0..360]"
+  },
+  {
+   "fn": "when",
+   "obj": "car0",
+   "field": "upx",
+   "op": "<=",
+   "value": -0.9,
+   "from": 0,
+   "tol": 3,
+   "label": "tick car is on wall (up.x<=-0.9)"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "z",
+   "tick": 180,
+   "tol": 20,
+   "label": "car0.z@180"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "wheels",
+   "tick": 180,
+   "tol": 0,
+   "label": "car0.wheels@180"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "speed",
+   "tick": 120,
+   "tol": 30,
+   "label": "car0.speed@120"
+  },
+  {
+   "fn": "when",
+   "obj": "car0",
+   "field": "onGround",
+   "op": "<=",
+   "value": 0,
+   "from": 30,
+   "tol": 3,
+   "label": "tick car leaves surface"
+  }
+ ]
+}

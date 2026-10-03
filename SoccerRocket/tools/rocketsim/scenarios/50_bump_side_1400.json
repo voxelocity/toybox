@@ -1,0 +1,88 @@
+{
+ "name": "bump_side_1400",
+ "desc": "Blue at 1400 uu/s T-bones a stationary orange car.",
+ "ticks": 150,
+ "cars": [
+  {
+   "team": 0,
+   "pos": [
+    0,
+    -800,
+    17
+   ],
+   "yaw": 1.5707963267948966,
+   "boost": 100,
+   "vel": [
+    0,
+    1400,
+    0
+   ],
+   "controls": [
+    {
+     "tick": 0,
+     "targetSpeed": 1400
+    }
+   ]
+  },
+  {
+   "team": 1,
+   "pos": [
+    0,
+    0,
+    17
+   ],
+   "yaw": 0,
+   "boost": 100
+  }
+ ],
+ "metrics": [
+  {
+   "fn": "eventTick",
+   "type": "bump",
+   "tol": 1,
+   "label": "first bump tick"
+  },
+  {
+   "fn": "eventCount",
+   "type": "bump",
+   "tol": 0,
+   "label": "bump count"
+  },
+  {
+   "fn": "afterEvent",
+   "type": "bump",
+   "obj": "car1",
+   "field": "speed",
+   "dt": 10,
+   "tol": 30,
+   "label": "car1.speed 10t after bump"
+  },
+  {
+   "fn": "afterEvent",
+   "type": "bump",
+   "obj": "car1",
+   "field": "vz",
+   "dt": 10,
+   "tol": 30,
+   "label": "car1.vz 10t after bump"
+  },
+  {
+   "fn": "max",
+   "obj": "car1",
+   "field": "z",
+   "from": 0,
+   "to": 150,
+   "tol": 10,
+   "label": "max car1.z[0..150]"
+  },
+  {
+   "fn": "afterEvent",
+   "type": "bump",
+   "obj": "car0",
+   "field": "speed",
+   "dt": 10,
+   "tol": 30,
+   "label": "car0.speed 10t after bump"
+  }
+ ]
+}

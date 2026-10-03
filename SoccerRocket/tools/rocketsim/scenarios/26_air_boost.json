@@ -1,0 +1,54 @@
+{
+ "name": "air_boost",
+ "desc": "Airborne, level, boost for 0.5 s (air boost accel 1058.33).",
+ "ticks": 90,
+ "cars": [
+  {
+   "team": 0,
+   "pos": [
+    0,
+    -2000,
+    1000
+   ],
+   "yaw": 1.5707963267948966,
+   "boost": 100,
+   "isOnGround": false,
+   "controls": [
+    {
+     "tick": 0,
+     "boost": true
+    },
+    {
+     "tick": 60,
+     "boost": false
+    }
+   ]
+  }
+ ],
+ "metrics": [
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "hspeed",
+   "tick": 60,
+   "tol": 5,
+   "label": "car0.hspeed@60"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "hspeed",
+   "tick": 90,
+   "tol": 5,
+   "label": "car0.hspeed@90"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "boost",
+   "tick": 60,
+   "tol": 0.3,
+   "label": "car0.boost@60"
+  }
+ ]
+}

@@ -1,0 +1,34 @@
+{
+ "name": "air_throttle",
+ "desc": "Airborne, throttle 1 for 0.5 s (66.67 uu/s^2).",
+ "ticks": 60,
+ "cars": [
+  {
+   "team": 0,
+   "pos": [
+    0,
+    -2000,
+    1000
+   ],
+   "yaw": 1.5707963267948966,
+   "boost": 100,
+   "isOnGround": false,
+   "controls": [
+    {
+     "tick": 0,
+     "throttle": 1
+    }
+   ]
+  }
+ ],
+ "metrics": [
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "hspeed",
+   "tick": 60,
+   "tol": 2,
+   "label": "car0.hspeed@60"
+  }
+ ]
+}

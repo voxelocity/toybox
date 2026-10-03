@@ -1,0 +1,43 @@
+{
+ "name": "ball_floor_angled",
+ "desc": "Ball hits the floor at 45 deg (1000 along, 1000 down) without spin.",
+ "ticks": 120,
+ "ball": {
+  "pos": [
+   0,
+   -2000,
+   500
+  ],
+  "vel": [
+   0,
+   1000,
+   -1000
+  ]
+ },
+ "metrics": [
+  {
+   "fn": "at",
+   "obj": "ball",
+   "field": "vy",
+   "tick": 60,
+   "tol": 5,
+   "label": "ball.vy@60"
+  },
+  {
+   "fn": "at",
+   "obj": "ball",
+   "field": "vz",
+   "tick": 60,
+   "tol": 5,
+   "label": "ball.vz@60"
+  },
+  {
+   "fn": "at",
+   "obj": "ball",
+   "field": "angSpeed",
+   "tick": 60,
+   "tol": 0.1,
+   "label": "ball.angSpeed@60"
+  }
+ ]
+}

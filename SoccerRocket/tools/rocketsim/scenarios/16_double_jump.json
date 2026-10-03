@@ -1,0 +1,82 @@
+{
+ "name": "double_jump",
+ "desc": "Full first jump (0.2 s), release, second jump at 0.3 s.",
+ "ticks": 340,
+ "cars": [
+  {
+   "team": 0,
+   "pos": [
+    0,
+    0,
+    17
+   ],
+   "yaw": 1.5707963267948966,
+   "boost": 100,
+   "controls": [
+    {
+     "tick": 0,
+     "jump": true
+    },
+    {
+     "tick": 24,
+     "jump": false
+    },
+    {
+     "tick": 36,
+     "jump": true
+    },
+    {
+     "tick": 40,
+     "jump": false
+    }
+   ]
+  }
+ ],
+ "metrics": [
+  {
+   "fn": "max",
+   "obj": "car0",
+   "field": "z",
+   "from": 0,
+   "to": 340,
+   "tol": 2,
+   "label": "max car0.z[0..340]"
+  },
+  {
+   "fn": "argmax",
+   "obj": "car0",
+   "field": "z",
+   "from": 0,
+   "to": 340,
+   "tol": 2,
+   "label": "tick of max car0.z"
+  },
+  {
+   "fn": "when",
+   "obj": "car0",
+   "field": "onGround",
+   "op": ">=",
+   "value": 1,
+   "from": 20,
+   "tol": 2,
+   "label": "car0 lands (tick, after 20)"
+  },
+  {
+   "fn": "max",
+   "obj": "car0",
+   "field": "vz",
+   "from": 0,
+   "to": 340,
+   "tol": 5,
+   "label": "max car0.vz[0..340]"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "vz",
+   "tick": 37,
+   "tol": 5,
+   "label": "vz right after 2nd jump"
+  }
+ ]
+}

@@ -2,3 +2,5 @@ node_modules/
 .shots/
 *.log
 assets/
+tools/rocketsim/.build/
+tools/rocketsim/.rocketsim/

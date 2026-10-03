@@ -1,0 +1,82 @@
+{
+ "name": "dribble_push",
+ "desc": "Car at 300 uu/s pushes a resting ball along the floor for 2.5 s.",
+ "ticks": 300,
+ "ball": {
+  "pos": [
+   0,
+   -600,
+   93.15
+  ]
+ },
+ "cars": [
+  {
+   "team": 0,
+   "pos": [
+    0,
+    -900,
+    17
+   ],
+   "yaw": 1.5707963267948966,
+   "boost": 100,
+   "vel": [
+    0,
+    300,
+    0
+   ],
+   "controls": [
+    {
+     "tick": 0,
+     "targetSpeed": 300
+    }
+   ]
+  }
+ ],
+ "metrics": [
+  {
+   "fn": "eventTick",
+   "type": "ballHit",
+   "tol": 2,
+   "label": "first ballHit tick"
+  },
+  {
+   "fn": "eventCount",
+   "type": "ballHit",
+   "tol": 0,
+   "label": "ballHit count"
+  },
+  {
+   "fn": "at",
+   "obj": "ball",
+   "field": "speed",
+   "tick": 120,
+   "tol": 20,
+   "label": "ball.speed@120"
+  },
+  {
+   "fn": "at",
+   "obj": "ball",
+   "field": "y",
+   "tick": 300,
+   "tol": 30,
+   "label": "ball.y@300"
+  },
+  {
+   "fn": "max",
+   "obj": "ball",
+   "field": "z",
+   "from": 0,
+   "to": 300,
+   "tol": 5,
+   "label": "max ball.z[0..300]"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "fwdSpeed",
+   "tick": 300,
+   "tol": 20,
+   "label": "car0.fwdSpeed@300"
+  }
+ ]
+}

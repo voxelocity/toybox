@@ -1,0 +1,80 @@
+{
+ "name": "powerslide_1400",
+ "desc": "Handbrake + full steer + throttle at 1400 uu/s.",
+ "ticks": 120,
+ "cars": [
+  {
+   "team": 0,
+   "pos": [
+    1200,
+    -1000,
+    17
+   ],
+   "yaw": 1.5707963267948966,
+   "boost": 100,
+   "vel": [
+    0,
+    1400,
+    0
+   ],
+   "controls": [
+    {
+     "tick": 0,
+     "steer": 1,
+     "throttle": 1,
+     "handbrake": true
+    }
+   ]
+  }
+ ],
+ "metrics": [
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "handbrake",
+   "tick": 6,
+   "tol": 0.01,
+   "label": "car0.handbrake@6"
+  },
+  {
+   "fn": "yawRate",
+   "obj": "car0",
+   "from": 30,
+   "to": 120,
+   "tol": 0.05,
+   "label": "car0 yaw rate [30..120] (rad/s)"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "speed",
+   "tick": 60,
+   "tol": 20,
+   "label": "car0.speed@60"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "speed",
+   "tick": 120,
+   "tol": 20,
+   "label": "car0.speed@120"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "slipDeg",
+   "tick": 60,
+   "tol": 2,
+   "label": "car0.slipDeg@60"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "slipDeg",
+   "tick": 120,
+   "tol": 2,
+   "label": "car0.slipDeg@120"
+  }
+ ]
+}

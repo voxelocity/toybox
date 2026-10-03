@@ -1,0 +1,65 @@
+{
+ "name": "land_drop_300",
+ "desc": "Upright car dropped from z=300 (landing impact, suspension bounce, settle).",
+ "ticks": 240,
+ "cars": [
+  {
+   "team": 0,
+   "pos": [
+    0,
+    0,
+    300
+   ],
+   "yaw": 1.5707963267948966,
+   "boost": 100,
+   "isOnGround": false
+  }
+ ],
+ "metrics": [
+  {
+   "fn": "when",
+   "obj": "car0",
+   "field": "onGround",
+   "op": ">=",
+   "value": 1,
+   "from": 0,
+   "tol": 1,
+   "label": "car0 lands (tick, after 0)"
+  },
+  {
+   "fn": "min",
+   "obj": "car0",
+   "field": "z",
+   "from": 0,
+   "to": 240,
+   "tol": 1,
+   "label": "min car0.z[0..240]"
+  },
+  {
+   "fn": "max",
+   "obj": "car0",
+   "field": "z",
+   "from": 70,
+   "to": 240,
+   "tol": 1,
+   "label": "max z after landing (bounce)"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "z",
+   "tick": 240,
+   "tol": 0.5,
+   "label": "car0.z@240"
+  },
+  {
+   "fn": "min",
+   "obj": "car0",
+   "field": "vz",
+   "from": 0,
+   "to": 240,
+   "tol": 5,
+   "label": "min car0.vz[0..240]"
+  }
+ ]
+}

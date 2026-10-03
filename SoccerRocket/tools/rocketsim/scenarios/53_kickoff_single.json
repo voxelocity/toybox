@@ -1,0 +1,74 @@
+{
+ "name": "kickoff_single",
+ "desc": "One car from the diagonal spot aimed at the ball, throttle + boost, hits the ball alone.",
+ "ticks": 300,
+ "ball": {
+  "pos": [
+   0,
+   0,
+   93.15
+  ]
+ },
+ "cars": [
+  {
+   "team": 0,
+   "pos": [
+    -2048,
+    -2560,
+    17
+   ],
+   "yaw": 0.8960553845713439,
+   "boost": 33.333333333333336,
+   "controls": [
+    {
+     "tick": 0,
+     "throttle": 1,
+     "boost": true
+    }
+   ]
+  }
+ ],
+ "metrics": [
+  {
+   "fn": "eventTick",
+   "type": "ballHit",
+   "tol": 2,
+   "label": "first ballHit tick"
+  },
+  {
+   "fn": "afterEvent",
+   "type": "ballHit",
+   "obj": "ball",
+   "field": "speed",
+   "dt": 20,
+   "tol": 30,
+   "label": "ball.speed 20t after ballHit"
+  },
+  {
+   "fn": "afterEvent",
+   "type": "ballHit",
+   "obj": "ball",
+   "field": "vz",
+   "dt": 20,
+   "tol": 20,
+   "label": "ball.vz 20t after ballHit"
+  },
+  {
+   "fn": "afterEvent",
+   "type": "ballHit",
+   "obj": "car0",
+   "field": "speed",
+   "dt": 20,
+   "tol": 30,
+   "label": "car0.speed 20t after ballHit"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "speed",
+   "tick": 90,
+   "tol": 15,
+   "label": "car0.speed@90"
+  }
+ ]
+}

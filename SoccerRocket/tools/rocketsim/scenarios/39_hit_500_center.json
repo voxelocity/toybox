@@ -1,0 +1,95 @@
+{
+ "name": "hit_500_center",
+ "desc": "Car at 500 uu/s drives into a resting ball head-on.",
+ "ticks": 150,
+ "unlimitedBoost": false,
+ "ball": {
+  "pos": [
+   0,
+   0,
+   93.15
+  ]
+ },
+ "cars": [
+  {
+   "team": 0,
+   "pos": [
+    0,
+    -550,
+    17
+   ],
+   "yaw": 1.5707963267948966,
+   "boost": 100,
+   "vel": [
+    0,
+    500,
+    0
+   ],
+   "controls": [
+    {
+     "tick": 0,
+     "targetSpeed": 500
+    }
+   ]
+  }
+ ],
+ "metrics": [
+  {
+   "fn": "eventTick",
+   "type": "ballHit",
+   "tol": 1,
+   "label": "first ballHit tick"
+  },
+  {
+   "fn": "afterEvent",
+   "type": "ballHit",
+   "obj": "ball",
+   "field": "speed",
+   "dt": 20,
+   "tol": 20,
+   "label": "ball.speed 20t after ballHit"
+  },
+  {
+   "fn": "afterEvent",
+   "type": "ballHit",
+   "obj": "ball",
+   "field": "vz",
+   "dt": 20,
+   "tol": 15,
+   "label": "ball.vz 20t after ballHit"
+  },
+  {
+   "fn": "afterEvent",
+   "type": "ballHit",
+   "obj": "ball",
+   "field": "vx",
+   "dt": 20,
+   "tol": 15,
+   "label": "ball.vx 20t after ballHit"
+  },
+  {
+   "fn": "afterEvent",
+   "type": "ballHit",
+   "obj": "car0",
+   "field": "fwdSpeed",
+   "dt": 20,
+   "tol": 20,
+   "label": "car0.fwdSpeed 20t after ballHit"
+  },
+  {
+   "fn": "afterEvent",
+   "type": "ballHit",
+   "obj": "ball",
+   "field": "angSpeed",
+   "dt": 20,
+   "tol": 0.2,
+   "label": "ball.angSpeed 20t after ballHit"
+  },
+  {
+   "fn": "eventCount",
+   "type": "ballHit",
+   "tol": 0,
+   "label": "ballHit count"
+  }
+ ]
+}

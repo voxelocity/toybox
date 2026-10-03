@@ -1,0 +1,105 @@
+{
+ "name": "bump_head_on_1400",
+ "desc": "Two cars (blue, orange) head-on at 1400 uu/s each.",
+ "ticks": 150,
+ "cars": [
+  {
+   "team": 0,
+   "pos": [
+    0,
+    -700,
+    17
+   ],
+   "yaw": 1.5707963267948966,
+   "boost": 100,
+   "vel": [
+    0,
+    1400,
+    0
+   ],
+   "controls": [
+    {
+     "tick": 0,
+     "throttle": 1
+    }
+   ]
+  },
+  {
+   "team": 1,
+   "pos": [
+    0,
+    700,
+    17
+   ],
+   "yaw": -1.5707963267948966,
+   "boost": 100,
+   "vel": [
+    0,
+    -1400,
+    0
+   ],
+   "controls": [
+    {
+     "tick": 0,
+     "throttle": 1
+    }
+   ]
+  }
+ ],
+ "metrics": [
+  {
+   "fn": "eventTick",
+   "type": "bump",
+   "tol": 1,
+   "label": "first bump tick"
+  },
+  {
+   "fn": "eventCount",
+   "type": "bump",
+   "tol": 0,
+   "label": "bump count"
+  },
+  {
+   "fn": "eventCount",
+   "type": "demo",
+   "tol": 0,
+   "label": "demo count"
+  },
+  {
+   "fn": "afterEvent",
+   "type": "bump",
+   "obj": "car0",
+   "field": "vy",
+   "dt": 30,
+   "tol": 30,
+   "label": "car0.vy 30t after bump"
+  },
+  {
+   "fn": "afterEvent",
+   "type": "bump",
+   "obj": "car1",
+   "field": "vy",
+   "dt": 30,
+   "tol": 30,
+   "label": "car1.vy 30t after bump"
+  },
+  {
+   "fn": "max",
+   "obj": "car0",
+   "field": "z",
+   "from": 0,
+   "to": 150,
+   "tol": 10,
+   "label": "max car0.z[0..150]"
+  },
+  {
+   "fn": "max",
+   "obj": "car1",
+   "field": "z",
+   "from": 0,
+   "to": 150,
+   "tol": 10,
+   "label": "max car1.z[0..150]"
+  }
+ ]
+}

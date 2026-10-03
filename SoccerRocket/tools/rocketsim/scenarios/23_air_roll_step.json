@@ -1,0 +1,80 @@
+{
+ "name": "air_roll_step",
+ "desc": "In the air at rest: roll +1 for 0.5 s then release (step response).",
+ "ticks": 100,
+ "cars": [
+  {
+   "team": 0,
+   "pos": [
+    0,
+    0,
+    1000
+   ],
+   "yaw": 1.5707963267948966,
+   "boost": 100,
+   "isOnGround": false,
+   "controls": [
+    {
+     "tick": 0,
+     "roll": 1
+    },
+    {
+     "tick": 60,
+     "pitch": 0,
+     "yaw": 0,
+     "roll": 0
+    }
+   ]
+  }
+ ],
+ "metrics": [
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "angSpeed",
+   "tick": 6,
+   "tol": 0.05,
+   "label": "car0.angSpeed@6"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "angSpeed",
+   "tick": 15,
+   "tol": 0.05,
+   "label": "car0.angSpeed@15"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "angSpeed",
+   "tick": 60,
+   "tol": 0.05,
+   "label": "car0.angSpeed@60"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "angSpeed",
+   "tick": 66,
+   "tol": 0.05,
+   "label": "car0.angSpeed@66"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "angSpeed",
+   "tick": 90,
+   "tol": 0.05,
+   "label": "car0.angSpeed@90"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "orientErrRef",
+   "tick": 60,
+   "tol": 2,
+   "label": "orientation (deg rotated) @60"
+  }
+ ]
+}

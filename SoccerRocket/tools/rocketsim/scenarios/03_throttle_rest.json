@@ -1,0 +1,99 @@
+{
+ "name": "throttle_rest",
+ "desc": "Full throttle from rest for 3 s (no boost).",
+ "ticks": 360,
+ "cars": [
+  {
+   "team": 0,
+   "pos": [
+    0,
+    -4000,
+    17
+   ],
+   "yaw": 1.5707963267948966,
+   "boost": 100,
+   "controls": [
+    {
+     "tick": 0,
+     "throttle": 1
+    }
+   ]
+  }
+ ],
+ "metrics": [
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "fwdSpeed",
+   "tick": 15,
+   "tol": 15,
+   "label": "car0.fwdSpeed@15"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "fwdSpeed",
+   "tick": 30,
+   "tol": 15,
+   "label": "car0.fwdSpeed@30"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "fwdSpeed",
+   "tick": 60,
+   "tol": 15,
+   "label": "car0.fwdSpeed@60"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "fwdSpeed",
+   "tick": 120,
+   "tol": 15,
+   "label": "car0.fwdSpeed@120"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "fwdSpeed",
+   "tick": 240,
+   "tol": 15,
+   "label": "car0.fwdSpeed@240"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "fwdSpeed",
+   "tick": 360,
+   "tol": 15,
+   "label": "car0.fwdSpeed@360"
+  },
+  {
+   "fn": "when",
+   "obj": "car0",
+   "field": "speed",
+   "op": ">=",
+   "value": 1000,
+   "from": 0,
+   "tol": 2,
+   "label": "tick car0.speed>=1000"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "pitchDeg",
+   "tick": 30,
+   "tol": 0.3,
+   "label": "pitch (deg) @30 under throttle"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "z",
+   "tick": 360,
+   "tol": 0.5,
+   "label": "car0.z@360"
+  }
+ ]
+}

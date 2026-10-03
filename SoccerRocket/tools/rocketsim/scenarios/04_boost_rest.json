@@ -1,0 +1,114 @@
+{
+ "name": "boost_rest",
+ "desc": "Throttle + boost from rest with 100 boost (runs out at 3 s).",
+ "ticks": 480,
+ "cars": [
+  {
+   "team": 0,
+   "pos": [
+    0,
+    -4800,
+    17
+   ],
+   "yaw": 1.5707963267948966,
+   "boost": 100,
+   "controls": [
+    {
+     "tick": 0,
+     "throttle": 1,
+     "boost": true
+    }
+   ]
+  }
+ ],
+ "metrics": [
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "speed",
+   "tick": 30,
+   "tol": 15,
+   "label": "car0.speed@30"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "speed",
+   "tick": 60,
+   "tol": 15,
+   "label": "car0.speed@60"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "speed",
+   "tick": 120,
+   "tol": 15,
+   "label": "car0.speed@120"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "speed",
+   "tick": 180,
+   "tol": 15,
+   "label": "car0.speed@180"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "speed",
+   "tick": 240,
+   "tol": 15,
+   "label": "car0.speed@240"
+  },
+  {
+   "fn": "when",
+   "obj": "car0",
+   "field": "speed",
+   "op": ">=",
+   "value": 2200,
+   "from": 0,
+   "tol": 2,
+   "label": "tick car0.speed>=2200"
+  },
+  {
+   "fn": "when",
+   "obj": "car0",
+   "field": "supersonic",
+   "op": ">=",
+   "value": 1,
+   "from": 0,
+   "tol": 2,
+   "label": "tick car0.supersonic>=1"
+  },
+  {
+   "fn": "when",
+   "obj": "car0",
+   "field": "speed",
+   "op": ">=",
+   "value": 2295,
+   "from": 0,
+   "tol": 3,
+   "label": "tick car0.speed>=2295"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "boost",
+   "tick": 120,
+   "tol": 0.5,
+   "label": "car0.boost@120"
+  },
+  {
+   "fn": "when",
+   "obj": "car0",
+   "field": "boost",
+   "op": "<=",
+   "value": 0,
+   "from": 0,
+   "tol": 1,
+   "label": "tick car0.boost<=0"
+  }
+ ]
+}

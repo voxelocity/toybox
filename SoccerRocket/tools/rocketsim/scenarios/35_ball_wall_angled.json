@@ -1,0 +1,51 @@
+{
+ "name": "ball_wall_angled",
+ "desc": "Ball hits the side wall at 45 deg (2000 uu/s in, 1000 along).",
+ "ticks": 150,
+ "ball": {
+  "pos": [
+   2800,
+   -600,
+   600
+  ],
+  "vel": [
+   2000,
+   1000,
+   300
+  ]
+ },
+ "metrics": [
+  {
+   "fn": "at",
+   "obj": "ball",
+   "field": "vx",
+   "tick": 120,
+   "tol": 10,
+   "label": "ball.vx@120"
+  },
+  {
+   "fn": "at",
+   "obj": "ball",
+   "field": "vy",
+   "tick": 120,
+   "tol": 10,
+   "label": "ball.vy@120"
+  },
+  {
+   "fn": "at",
+   "obj": "ball",
+   "field": "vz",
+   "tick": 120,
+   "tol": 10,
+   "label": "ball.vz@120"
+  },
+  {
+   "fn": "at",
+   "obj": "ball",
+   "field": "angSpeed",
+   "tick": 120,
+   "tol": 0.1,
+   "label": "ball.angSpeed@120"
+  }
+ ]
+}

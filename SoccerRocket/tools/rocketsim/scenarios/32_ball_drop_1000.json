@@ -1,0 +1,44 @@
+{
+ "name": "ball_drop_1000",
+ "desc": "Ball dropped from z=1000 (5 bounces).",
+ "ticks": 720,
+ "ball": {
+  "pos": [
+   0,
+   0,
+   1000
+  ],
+  "vel": [
+   0,
+   0,
+   -1
+  ]
+ },
+ "metrics": [
+  {
+   "fn": "ballApexes",
+   "n": 5,
+   "tol": 2,
+   "label": "ball bounce apex z x5"
+  },
+  {
+   "fn": "min",
+   "obj": "ball",
+   "field": "vz",
+   "from": 0,
+   "to": 120,
+   "tol": 3,
+   "label": "impact vz (first)"
+  },
+  {
+   "fn": "when",
+   "obj": "ball",
+   "field": "vz",
+   "op": ">=",
+   "value": 1,
+   "from": 0,
+   "tol": 1,
+   "label": "first bounce tick"
+  }
+ ]
+}

@@ -1,0 +1,33 @@
+{
+ "name": "ball_rest_settle",
+ "desc": "Ball dropped from z=150 comes to rest (RL rest z 93.15).",
+ "ticks": 480,
+ "ball": {
+  "pos": [
+   0,
+   0,
+   150
+  ],
+  "vel": [
+   0,
+   0,
+   -1
+  ]
+ },
+ "metrics": [
+  {
+   "fn": "at",
+   "obj": "ball",
+   "field": "z",
+   "tick": 480,
+   "tol": 0.2,
+   "label": "ball.z@480"
+  },
+  {
+   "fn": "ballApexes",
+   "n": 2,
+   "tol": 2,
+   "label": "ball bounce apex z x2"
+  }
+ ]
+}

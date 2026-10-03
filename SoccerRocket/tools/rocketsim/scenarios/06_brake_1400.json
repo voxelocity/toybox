@@ -1,0 +1,64 @@
+{
+ "name": "brake_1400",
+ "desc": "Moving at 1400 uu/s, full reverse throttle (brake ~3500 uu/s^2), then reverse.",
+ "ticks": 240,
+ "cars": [
+  {
+   "team": 0,
+   "pos": [
+    0,
+    -2000,
+    17
+   ],
+   "yaw": 1.5707963267948966,
+   "boost": 100,
+   "vel": [
+    0,
+    1400,
+    0
+   ],
+   "controls": [
+    {
+     "tick": 0,
+     "throttle": -1
+    }
+   ]
+  }
+ ],
+ "metrics": [
+  {
+   "fn": "when",
+   "obj": "car0",
+   "field": "fwdSpeed",
+   "op": "<=",
+   "value": 0,
+   "from": 0,
+   "tol": 2,
+   "label": "tick car0.fwdSpeed<=0"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "fwdSpeed",
+   "tick": 15,
+   "tol": 20,
+   "label": "car0.fwdSpeed@15"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "fwdSpeed",
+   "tick": 120,
+   "tol": 20,
+   "label": "car0.fwdSpeed@120"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "fwdSpeed",
+   "tick": 240,
+   "tol": 20,
+   "label": "car0.fwdSpeed@240"
+  }
+ ]
+}

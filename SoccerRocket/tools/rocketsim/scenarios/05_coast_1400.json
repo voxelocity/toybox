@@ -1,0 +1,66 @@
+{
+ "name": "coast_1400",
+ "desc": "Moving at 1400 uu/s, release throttle (coast brake 0.15 -> ~525 uu/s^2).",
+ "ticks": 360,
+ "cars": [
+  {
+   "team": 0,
+   "pos": [
+    0,
+    -4000,
+    17
+   ],
+   "yaw": 1.5707963267948966,
+   "boost": 100,
+   "vel": [
+    0,
+    1400,
+    0
+   ]
+  }
+ ],
+ "metrics": [
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "fwdSpeed",
+   "tick": 30,
+   "tol": 15,
+   "label": "car0.fwdSpeed@30"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "fwdSpeed",
+   "tick": 60,
+   "tol": 15,
+   "label": "car0.fwdSpeed@60"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "fwdSpeed",
+   "tick": 120,
+   "tol": 15,
+   "label": "car0.fwdSpeed@120"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "fwdSpeed",
+   "tick": 240,
+   "tol": 15,
+   "label": "car0.fwdSpeed@240"
+  },
+  {
+   "fn": "when",
+   "obj": "car0",
+   "field": "speed",
+   "op": "<=",
+   "value": 5,
+   "from": 0,
+   "tol": 3,
+   "label": "tick car0.speed<=5"
+  }
+ ]
+}

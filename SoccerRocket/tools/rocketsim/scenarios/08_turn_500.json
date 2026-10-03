@@ -1,0 +1,74 @@
+{
+ "name": "turn_500",
+ "desc": "Full steer right at 500 uu/s (cruise control); steady-state turn radius.",
+ "ticks": 240,
+ "unlimitedBoost": false,
+ "cars": [
+  {
+   "team": 0,
+   "pos": [
+    1200,
+    -1000,
+    17
+   ],
+   "yaw": 1.5707963267948966,
+   "boost": 100,
+   "vel": [
+    0,
+    500,
+    0
+   ],
+   "controls": [
+    {
+     "tick": 0,
+     "steer": 1,
+     "targetSpeed": 500
+    }
+   ]
+  }
+ ],
+ "metrics": [
+  {
+   "fn": "avg",
+   "obj": "car0",
+   "field": "speed",
+   "from": 120,
+   "to": 240,
+   "tol": 10,
+   "label": "avg car0.speed[120..240]"
+  },
+  {
+   "fn": "yawRate",
+   "obj": "car0",
+   "from": 120,
+   "to": 240,
+   "tol": 0.03,
+   "label": "car0 yaw rate [120..240] (rad/s)"
+  },
+  {
+   "fn": "turnRadius",
+   "obj": "car0",
+   "from": 120,
+   "to": 240,
+   "tol": 10,
+   "label": "car0 turn radius [120..240] (uu)"
+  },
+  {
+   "fn": "avg",
+   "obj": "car0",
+   "field": "slipDeg",
+   "from": 120,
+   "to": 240,
+   "tol": 1,
+   "label": "avg car0.slipDeg[120..240]"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "rollDeg",
+   "tick": 180,
+   "tol": 0.5,
+   "label": "body roll (deg) @180"
+  }
+ ]
+}

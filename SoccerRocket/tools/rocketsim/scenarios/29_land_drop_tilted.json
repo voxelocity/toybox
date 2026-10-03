@@ -1,0 +1,65 @@
+{
+ "name": "land_drop_tilted",
+ "desc": "Car rolled 0.6 rad and pitched 0.3 rad dropped from z=200 (landing on two wheels).",
+ "ticks": 240,
+ "cars": [
+  {
+   "team": 0,
+   "pos": [
+    0,
+    0,
+    200
+   ],
+   "yaw": 1.5707963267948966,
+   "boost": 100,
+   "roll": 0.6,
+   "pitch": 0.3,
+   "isOnGround": false
+  }
+ ],
+ "metrics": [
+  {
+   "fn": "when",
+   "obj": "car0",
+   "field": "onGround",
+   "op": ">=",
+   "value": 1,
+   "from": 0,
+   "tol": 2,
+   "label": "car0 lands (tick, after 0)"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "upz",
+   "tick": 120,
+   "tol": 0.02,
+   "label": "car0.upz@120"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "upz",
+   "tick": 240,
+   "tol": 0.01,
+   "label": "car0.upz@240"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "z",
+   "tick": 240,
+   "tol": 0.5,
+   "label": "car0.z@240"
+  },
+  {
+   "fn": "max",
+   "obj": "car0",
+   "field": "angSpeed",
+   "from": 0,
+   "to": 240,
+   "tol": 0.3,
+   "label": "max car0.angSpeed[0..240]"
+  }
+ ]
+}

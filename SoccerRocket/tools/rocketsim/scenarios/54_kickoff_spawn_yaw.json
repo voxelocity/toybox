@@ -1,0 +1,69 @@
+{
+ "name": "kickoff_spawn_yaw",
+ "desc": "Diagonal kickoff with the real spawn yaw pi/4 and steer +0.3 toward the ball for 0.5 s.",
+ "ticks": 300,
+ "ball": {
+  "pos": [
+   0,
+   0,
+   93.15
+  ]
+ },
+ "cars": [
+  {
+   "team": 0,
+   "pos": [
+    -2048,
+    -2560,
+    17
+   ],
+   "yaw": 0.7853981633974483,
+   "boost": 33.333333333333336,
+   "controls": [
+    {
+     "tick": 0,
+     "throttle": 1,
+     "boost": true,
+     "steer": -0.3
+    },
+    {
+     "tick": 60,
+     "steer": 0
+    }
+   ]
+  }
+ ],
+ "metrics": [
+  {
+   "fn": "eventTick",
+   "type": "ballHit",
+   "tol": 2,
+   "label": "first ballHit tick"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "x",
+   "tick": 60,
+   "tol": 10,
+   "label": "car0.x@60"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "heading",
+   "tick": 60,
+   "tol": 0.02,
+   "label": "heading (rad) @60"
+  },
+  {
+   "fn": "afterEvent",
+   "type": "ballHit",
+   "obj": "ball",
+   "field": "speed",
+   "dt": 20,
+   "tol": 30,
+   "label": "ball.speed 20t after ballHit"
+  }
+ ]
+}

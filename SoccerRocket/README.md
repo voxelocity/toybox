@@ -31,12 +31,16 @@ phone or tablet on the same Wi-Fi.
 ### Getting this folder onto your PC
 
 The code lives in the `SoccerRocket/` folder of the `claude/clever-mccarthy-p84tr5` branch.
-Copy its contents into your project folder and leave your existing `assets` folder where it is:
+Copy its contents into your project folder and leave your existing `assets` folder where it is.
+Run these in **Command Prompt** (not PowerShell). They work for the first install and for every
+update afterwards:
 
 ```bat
-git clone -b claude/clever-mccarthy-p84tr5 https://github.com/voxelocity/toybox %TEMP%\toybox
+if exist %TEMP%\toybox\.git (git -C %TEMP%\toybox fetch origin claude/clever-mccarthy-p84tr5 && git -C %TEMP%\toybox reset --hard FETCH_HEAD) else (git clone -b claude/clever-mccarthy-p84tr5 https://github.com/voxelocity/toybox %TEMP%\toybox)
 xcopy /E /I /Y %TEMP%\toybox\SoccerRocket C:\Users\shark\Documents\Projects\SoccerRocket
 ```
+
+Then restart `npm start` and reload the page with Ctrl+F5.
 
 ## Your car and ball models
 

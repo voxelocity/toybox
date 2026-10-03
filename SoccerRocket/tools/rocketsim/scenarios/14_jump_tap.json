@@ -1,0 +1,66 @@
+{
+ "name": "jump_tap",
+ "desc": "Jump pressed for exactly 1 tick (minimum jump).",
+ "ticks": 180,
+ "cars": [
+  {
+   "team": 0,
+   "pos": [
+    0,
+    0,
+    17
+   ],
+   "yaw": 1.5707963267948966,
+   "boost": 100,
+   "controls": [
+    {
+     "tick": 0,
+     "jump": true
+    },
+    {
+     "tick": 1,
+     "jump": false
+    }
+   ]
+  }
+ ],
+ "metrics": [
+  {
+   "fn": "max",
+   "obj": "car0",
+   "field": "z",
+   "from": 0,
+   "to": 180,
+   "tol": 2,
+   "label": "max car0.z[0..180]"
+  },
+  {
+   "fn": "argmax",
+   "obj": "car0",
+   "field": "z",
+   "from": 0,
+   "to": 180,
+   "tol": 2,
+   "label": "tick of max car0.z"
+  },
+  {
+   "fn": "when",
+   "obj": "car0",
+   "field": "onGround",
+   "op": ">=",
+   "value": 1,
+   "from": 20,
+   "tol": 2,
+   "label": "car0 lands (tick, after 20)"
+  },
+  {
+   "fn": "max",
+   "obj": "car0",
+   "field": "vz",
+   "from": 0,
+   "to": 180,
+   "tol": 5,
+   "label": "max car0.vz[0..180]"
+  }
+ ]
+}

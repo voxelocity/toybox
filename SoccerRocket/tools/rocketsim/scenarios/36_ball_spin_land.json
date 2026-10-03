@@ -1,0 +1,65 @@
+{
+ "name": "ball_spin_land",
+ "desc": "Ball with 6 rad/s backspin dropped from z=300 (spin -> velocity on bounce).",
+ "ticks": 150,
+ "ball": {
+  "pos": [
+   0,
+   0,
+   300
+  ],
+  "vel": [
+   0,
+   0,
+   -1
+  ],
+  "angVel": [
+   6,
+   0,
+   0
+  ]
+ },
+ "metrics": [
+  {
+   "fn": "at",
+   "obj": "ball",
+   "field": "vy",
+   "tick": 60,
+   "tol": 5,
+   "label": "ball.vy@60"
+  },
+  {
+   "fn": "at",
+   "obj": "ball",
+   "field": "vz",
+   "tick": 60,
+   "tol": 5,
+   "label": "ball.vz@60"
+  },
+  {
+   "fn": "at",
+   "obj": "ball",
+   "field": "angSpeed",
+   "tick": 60,
+   "tol": 0.1,
+   "label": "ball.angSpeed@60"
+  },
+  {
+   "fn": "at",
+   "obj": "ball",
+   "field": "vy",
+   "tick": 150,
+   "tol": 5,
+   "label": "ball.vy@150"
+  },
+  {
+   "fn": "max",
+   "obj": "ball",
+   "field": "z",
+   "from": 50,
+   "to": 150,
+   "tol": 2,
+   "label": "max ball.z[50..150]"
+  }
+ ]
+}

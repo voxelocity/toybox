@@ -1,0 +1,62 @@
+{
+ "name": "ball_on_roof",
+ "desc": "Ball dropped onto a stationary car roof from z=300 (car-ball restitution 0, friction 2).",
+ "ticks": 150,
+ "ball": {
+  "pos": [
+   10,
+   0,
+   300
+  ],
+  "vel": [
+   0,
+   0,
+   -1
+  ]
+ },
+ "cars": [
+  {
+   "team": 0,
+   "pos": [
+    0,
+    0,
+    17
+   ],
+   "yaw": 1.5707963267948966,
+   "boost": 100
+  }
+ ],
+ "metrics": [
+  {
+   "fn": "eventTick",
+   "type": "ballHit",
+   "tol": 1,
+   "label": "first ballHit tick"
+  },
+  {
+   "fn": "max",
+   "obj": "ball",
+   "field": "z",
+   "from": 30,
+   "to": 150,
+   "tol": 3,
+   "label": "ball rebound apex"
+  },
+  {
+   "fn": "at",
+   "obj": "ball",
+   "field": "z",
+   "tick": 150,
+   "tol": 5,
+   "label": "ball.z@150"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "z",
+   "tick": 60,
+   "tol": 1,
+   "label": "car0.z@60"
+  }
+ ]
+}

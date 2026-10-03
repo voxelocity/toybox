@@ -1,0 +1,64 @@
+{
+ "name": "turtle_autoflip",
+ "desc": "Upside down on the floor, press jump (auto-flip recovery).",
+ "ticks": 300,
+ "cars": [
+  {
+   "team": 0,
+   "pos": [
+    0,
+    0,
+    60
+   ],
+   "yaw": 1.5707963267948966,
+   "boost": 100,
+   "roll": 3.141592653589793,
+   "isOnGround": false,
+   "controls": [
+    {
+     "tick": 90,
+     "jump": true
+    },
+    {
+     "tick": 92,
+     "jump": false
+    }
+   ]
+  }
+ ],
+ "metrics": [
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "upz",
+   "tick": 90,
+   "tol": 0.05,
+   "label": "car0.upz@90"
+  },
+  {
+   "fn": "max",
+   "obj": "car0",
+   "field": "angSpeed",
+   "from": 90,
+   "to": 300,
+   "tol": 0.3,
+   "label": "max car0.angSpeed[90..300]"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "upz",
+   "tick": 200,
+   "tol": 0.1,
+   "label": "car0.upz@200"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "upz",
+   "tick": 300,
+   "tol": 0.05,
+   "label": "car0.upz@300"
+  }
+ ]
+}
