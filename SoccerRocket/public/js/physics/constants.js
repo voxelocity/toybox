@@ -43,37 +43,41 @@ export const SUPERSONIC_START_SPEED = 2200;
 export const SUPERSONIC_MAINTAIN_MIN_SPEED = 2100;
 export const SUPERSONIC_MAINTAIN_MAX_TIME = 1;
 
-// --- Driving ---------------------------------------------------------------
-export const THROTTLE_ACCEL = 1600;              // all four wheels, at 0 speed
+// --- Driving (RocketSim RLConst.h; forces in uu, mass 180) --------------------
+// Engine force per wheel: throttle * THROTTLE_TORQUE_AMOUNT * drive speed
+// scale (1600 uu/s^2 over four wheels at 0 speed); the brake caps each wheel's
+// rolling-friction impulse at BRAKE_TORQUE_AMOUNT * (m/3) * dt (3500 uu/s^2).
+export const THROTTLE_TORQUE_AMOUNT = CAR_MASS * 400;
+export const BRAKE_TORQUE_AMOUNT = CAR_MASS * (14.25 + 1 / 3);
+export const THROTTLE_ACCEL = 4 * THROTTLE_TORQUE_AMOUNT / CAR_MASS; // 1600 uu/s^2 (for planners)
 export const DRIVE_SPEED_TORQUE_CURVE = [[0, 1], [1400, 0.1], [1410, 0]];
-export const BRAKE_ACCEL = 3500;
 export const COASTING_BRAKE_FACTOR = 0.15;
-export const STOPPING_FORWARD_VEL = 25;
+export const STOPPING_FORWARD_VEL = 25;          // below this, coasting full-brakes and reverse throttle drives
+export const BRAKING_NO_THROTTLE_SPEED_THRESH = 0.01;
 export const THROTTLE_DEADZONE = 0.001;
 export const THROTTLE_AIR_ACCEL = 200 / 3;
-// Effective front-wheel steer angle by forward speed. Calibrated with
-// tools/calibrate-steer.mjs so that steady-state turning curvature matches the
-// measured max-curvature table (0.00398 @500, 0.00235 @1000, 0.001375 @1500,
-// 0.0011 @1750, 0.00088 @2300) given this tyre model's slip.
-export const STEER_ANGLE_CURVE = [[0, 0.53356], [500, 0.32542], [1000, 0.19195], [1500, 0.11152], [1750, 0.08862], [2300, 0.06983], [3000, 0.04592]];
+// btVehicleRL::calcFrictionImpulses rolling-friction gain while braking
+export const ROLLING_FRICTION_SCALE_MAGIC = 113.73963;
+// Bullet resolveSingleBilateral contactDamping (lateral tyre impulse gain)
+export const BT_CONTACT_DAMPING = 0.2;
+// Max front-wheel steer angle (rad) by forward speed (STEER_ANGLE_FROM_SPEED_CURVE)
+export const STEER_ANGLE_CURVE = [[0, 0.53356], [500, 0.31930], [1000, 0.18203], [1500, 0.10570], [1750, 0.08507], [3000, 0.03454]];
 export const POWERSLIDE_STEER_ANGLE_CURVE = [[0, 0.39235], [2500, 0.12610]];
 export const LAT_FRICTION_CURVE = [[0, 1], [1, 0.2]];
-export const LONG_FRICTION_CURVE = [[0, 1], [1, 1]];
+export const LONG_FRICTION_CURVE = [[0, 1]];     // empty in RocketSim: constant 1
 export const HANDBRAKE_LAT_FRICTION_FACTOR = 0.1;
 export const HANDBRAKE_LONG_FRICTION_CURVE = [[0, 0.5], [1, 0.9]];
 export const NON_STICKY_FRICTION_CURVE = [[0, 0.1], [0.7075, 0.5], [1, 1]];
 export const POWERSLIDE_RISE_RATE = 5;
 export const POWERSLIDE_FALL_RATE = 2;
-export const STICKY_FORCE_BASE = 0.5;            // x gravity, extra wall term below
-export const LATERAL_CONTACT_DAMPING = 0.2;      // bilateral friction constraint gain
-export const ROLL_INFLUENCE = 0;          // friction applied in the COM plane
+export const STICKY_FORCE_BASE = 0.5;            // x gravity, plus 1 - |up.z| at full stick
 
 // --- Suspension (per wheel) -------------------------------------------------
 export const SUSPENSION_STIFFNESS = 500;
 export const WHEELS_DAMPING_COMPRESSION = 25;
 export const WHEELS_DAMPING_RELAXATION = 40;
 export const MAX_SUSPENSION_TRAVEL = 12;
-export const SUSPENSION_SUBTRACTION = 2.5;   // ray reach = rest length + radius - 2.5
+export const SUSPENSION_SUBTRACTION = 2.5;   // ray length = rest length + travel + radius - 2.5
 export const SUSPENSION_FORCE_SCALE_FRONT = 36 - 1 / 4;
 export const SUSPENSION_FORCE_SCALE_BACK = 54 + 1 / 4 + 1.5 / 100;
 
@@ -113,6 +117,7 @@ export const JUMP_MIN_TIME = 0.025;
 export const JUMP_MAX_TIME = 0.2;
 export const JUMP_IMMEDIATE_VEL = 875 / 3;
 export const JUMP_PRE_MIN_ACCEL_SCALE = 0.62;
+export const JUMP_RESET_TIME_PAD = 1 / 40;
 export const DOUBLEJUMP_MAX_DELAY = 1.25;
 export const DODGE_DEADZONE = 0.5;
 export const FLIP_Z_DAMP_120 = 0.35;
@@ -121,8 +126,8 @@ export const FLIP_Z_DAMP_END = 0.21;
 export const FLIP_TORQUE_TIME = 0.65;
 export const FLIP_PITCHLOCK_EXTRA_TIME = 0.3;
 export const FLIP_INITIAL_VEL_SCALE = 500;
-export const FLIP_TORQUE_ROLL = 260;
-export const FLIP_TORQUE_PITCH = 224;
+export const FLIP_TORQUE_X = 260; // roll (left / right dodge)
+export const FLIP_TORQUE_Y = 224; // pitch (forward / backward dodge)
 export const FLIP_FORWARD_IMPULSE_MAX_SPEED_SCALE = 1;
 export const FLIP_SIDE_IMPULSE_MAX_SPEED_SCALE = 1.9;
 export const FLIP_BACKWARD_IMPULSE_MAX_SPEED_SCALE = 2.5;
@@ -137,6 +142,7 @@ export const AUTOFLIP_IMPULSE = 200;
 export const AUTOFLIP_TORQUE = 50;
 export const AUTOFLIP_TIME = 0.4;
 export const AUTOFLIP_NORMZ_THRESH = Math.SQRT1_2;
+export const AUTOFLIP_ROLL_THRESH = 2.8;
 export const AUTOROLL_FORCE = 100;
 export const AUTOROLL_TORQUE = 80;
 
