@@ -55,6 +55,16 @@ const SIMD_EPSILON_SQ = 1.1920928955078125e-7 * 1.1920928955078125e-7;
 // first stepSimulation (RocketSim's first tick computes the extra pushback
 // with it, as the solver info is only updated inside the step).
 const BT_ERP = 0.2, BT_DEFAULT_SOLVER_DT = 1 / 60;
+// RocketSim keeps the car's timers (and boost) in 32-bit floats and compares
+// them with float constants, which decides on which tick a jump, flip or boost
+// phase ends (24 ticks of 1/120 s add up to >= 0.2 in float, < 0.2 in double).
+const f32 = Math.fround;
+const T_JUMP_MIN = f32(K.JUMP_MIN_TIME), T_JUMP_MAX = f32(K.JUMP_MAX_TIME);
+const T_JUMP_RESET = f32(T_JUMP_MIN + f32(K.JUMP_RESET_TIME_PAD));
+const T_DOUBLEJUMP_MAX = f32(K.DOUBLEJUMP_MAX_DELAY);
+const T_FLIP_TORQUE = f32(K.FLIP_TORQUE_TIME), T_FLIP_PITCHLOCK = f32(T_FLIP_TORQUE + f32(K.FLIP_PITCHLOCK_EXTRA_TIME));
+const T_FLIP_Z_DAMP_START = f32(K.FLIP_Z_DAMP_START), T_FLIP_Z_DAMP_END = f32(K.FLIP_Z_DAMP_END);
+const T_BOOST_MIN = f32(K.BOOST_MIN_TIME), T_SUPERSONIC_MAINTAIN = f32(K.SUPERSONIC_MAINTAIN_MAX_TIME);
 
 export function makeControls() {
   return { throttle: 0, steer: 0, pitch: 0, yaw: 0, roll: 0, jump: false, boost: false, handbrake: false };
@@ -397,8 +407,9 @@ export class Car {
     for (let i = 0; i < 4; i++) wheelsHaveWorldContact = wheelsHaveWorldContact || wheels[i].contactWorld;
 
     // handbrake value from input
-    if (s.handbrake) this.handbrakeVal += K.POWERSLIDE_RISE_RATE * dt;
-    else this.handbrakeVal -= K.POWERSLIDE_FALL_RATE * dt;
+    const dtf = f32(dt);
+    if (s.handbrake) this.handbrakeVal = f32(this.handbrakeVal + f32(K.POWERSLIDE_RISE_RATE * dtf));
+    else this.handbrakeVal = f32(this.handbrakeVal - f32(K.POWERSLIDE_FALL_RATE * dtf));
     this.handbrakeVal = clamp(this.handbrakeVal, 0, 1);
 
     let realThrottle = s.throttle, realBrake = 0;
@@ -479,7 +490,7 @@ export class Car {
     const s = this.rsControls, Tq = this.extTorque, fwd = _fwd, right = _right, up = _up;
     // dirPitch_right = -right, dirYaw_up = up, dirRoll_forward = -forward
     let doAirControl = false;
-    if (this.isFlipping) this.isFlipping = this.hasFlipped && this.flipTime < K.FLIP_TORQUE_TIME;
+    if (this.isFlipping) this.isFlipping = this.hasFlipped && this.flipTime < T_FLIP_TORQUE;
     if (this.isFlipping) {
       const rt = this.flipRelTorque;
       if (!rt.isZero()) {
@@ -507,7 +518,7 @@ export class Car {
       let tx = 0, ty = 0, tz = 0;
       if (s.pitch || s.yaw || s.roll) {
         if (this.isFlipping) pitchTorqueScale = 0;
-        else if (this.hasFlipped && this.flipTime < K.FLIP_TORQUE_TIME + K.FLIP_PITCHLOCK_EXTRA_TIME) pitchTorqueScale = 0; // pitch lock after a flip
+        else if (this.hasFlipped && this.flipTime < T_FLIP_PITCHLOCK) pitchTorqueScale = 0; // pitch lock after a flip
         const p = s.pitch * pitchTorqueScale * K.AIR_TORQUE.pitch, y = s.yaw * K.AIR_TORQUE.yaw, r = s.roll * K.AIR_TORQUE.roll;
         tx = -right.x * p + up.x * y - fwd.x * r;
         ty = -right.y * p + up.y * y - fwd.y * r;
@@ -529,13 +540,13 @@ export class Car {
   _updateJump(dt, jumpPressed) {
     if (this.isOnGround && !this.isJumping) {
       // keep hasJumped for a moment after a minimum-time jump, we might still be leaving the ground
-      if (!(this.hasJumped && this.jumpTime < K.JUMP_MIN_TIME + K.JUMP_RESET_TIME_PAD)) {
+      if (!(this.hasJumped && this.jumpTime < T_JUMP_RESET)) {
         this.hasJumped = false;
         this.jumpTime = 0;
       }
     }
     if (this.isJumping) {
-      this.isJumping = this.jumpTime < K.JUMP_MIN_TIME || (this.rsControls.jump && this.jumpTime < K.JUMP_MAX_TIME);
+      this.isJumping = this.jumpTime < T_JUMP_MIN || (this.rsControls.jump && this.jumpTime < T_JUMP_MAX);
     } else if (this.isOnGround && jumpPressed) {
       this.isJumping = true;
       this.jumpTime = 0;
@@ -545,9 +556,9 @@ export class Car {
     if (this.isJumping) {
       this.hasJumped = true;
       // extra long-jump force
-      this.extForce.addScaled(_up, K.JUMP_ACCEL * (this.jumpTime < K.JUMP_MIN_TIME ? K.JUMP_PRE_MIN_ACCEL_SCALE : 1));
+      this.extForce.addScaled(_up, K.JUMP_ACCEL * (this.jumpTime < T_JUMP_MIN ? K.JUMP_PRE_MIN_ACCEL_SCALE : 1));
     }
-    if (this.isJumping || this.hasJumped) this.jumpTime += dt;
+    if (this.isJumping || this.hasJumped) this.jumpTime = f32(this.jumpTime + f32(dt));
   }
 
   // Car::_UpdateAutoFlip: jump while upside down on a surface rolls the car over
@@ -557,7 +568,7 @@ export class Car {
       // Angle::FromRotMat roll (btMatrix3x3::getEulerYPR, negated)
       const e = this.R.e, roll = -Math.atan2(e[7], e[8]), absRoll = Math.abs(roll);
       if (absRoll > K.AUTOFLIP_ROLL_THRESH) {
-        this.autoFlipTimer = K.AUTOFLIP_TIME * (absRoll / Math.PI);
+        this.autoFlipTimer = f32(K.AUTOFLIP_TIME * (absRoll / Math.PI));
         this.autoFlipTorqueScale = roll > 0 ? 1 : -1;
         this.isAutoFlipping = true;
         this.vel.addScaled(_up, -K.AUTOFLIP_IMPULSE);
@@ -570,7 +581,7 @@ export class Car {
         this.autoFlipTimer = 0;
       } else {
         this.angVel.addScaled(_fwd, K.AUTOFLIP_TORQUE * this.autoFlipTorqueScale * dt);
-        this.autoFlipTimer -= dt;
+        this.autoFlipTimer = f32(this.autoFlipTimer - f32(dt));
       }
     }
   }
@@ -578,7 +589,7 @@ export class Car {
   // Car::_UpdateDoubleJumpOrFlip
   _updateDoubleJumpOrFlip(dt, jumpPressed) {
     const s = this.rsControls;
-    const tickTimeScale = dt * 120;
+    const tickTimeScale = dt * 120, dtf = f32(dt);
     if (this.isOnGround) {
       this.hasDoubleJumped = false;
       this.hasFlipped = false;
@@ -586,11 +597,11 @@ export class Car {
       this.airTimeSinceJump = 0;
       this.flipTime = 0;
     } else {
-      this.airTime += dt;
-      if (this.hasJumped && !this.isJumping) this.airTimeSinceJump += dt;
+      this.airTime = f32(this.airTime + dtf);
+      if (this.hasJumped && !this.isJumping) this.airTimeSinceJump = f32(this.airTimeSinceJump + dtf);
       else this.airTimeSinceJump = 0;
 
-      if (jumpPressed && this.airTimeSinceJump < K.DOUBLEJUMP_MAX_DELAY) {
+      if (jumpPressed && this.airTimeSinceJump < T_DOUBLEJUMP_MAX) {
         const inputMagnitude = Math.abs(s.yaw) + Math.abs(s.pitch) + Math.abs(s.roll);
         const isFlipInput = inputMagnitude >= this.dodgeDeadzone;
         const canUse = !this.hasDoubleJumped && !this.hasFlipped && !this.isAutoFlipping;
@@ -610,14 +621,14 @@ export class Car {
       }
     }
     if (this.isFlipping) {
-      this.flipTime += dt;
-      if (this.flipTime <= K.FLIP_TORQUE_TIME &&
-        this.flipTime >= K.FLIP_Z_DAMP_START && (this.vel.z < 0 || this.flipTime < K.FLIP_Z_DAMP_END)) {
+      this.flipTime = f32(this.flipTime + dtf);
+      if (this.flipTime <= T_FLIP_TORQUE &&
+        this.flipTime >= T_FLIP_Z_DAMP_START && (this.vel.z < 0 || this.flipTime < T_FLIP_Z_DAMP_END)) {
         this.vel.z *= Math.pow(1 - K.FLIP_Z_DAMP_120, tickTimeScale);
       }
     } else if (this.hasFlipped) {
       // flip time keeps counting for the pitch lock after the flip
-      this.flipTime += dt;
+      this.flipTime = f32(this.flipTime + dtf);
     }
   }
 
@@ -709,14 +720,14 @@ export class Car {
   _updateBoost(dt) {
     const s = this.rsControls, was = this.isBoosting;
     if (this.boost > 0 || this._unlimitedBoost) {
-      if (this.isBoosting) this.isBoosting = s.boost || this.boostingTime < K.BOOST_MIN_TIME;
+      if (this.isBoosting) this.isBoosting = s.boost || this.boostingTime < T_BOOST_MIN;
       else if (s.boost) this.isBoosting = true;
     } else {
       this.isBoosting = false;
     }
-    this.boostingTime = this.isBoosting ? this.boostingTime + dt : 0;
+    this.boostingTime = this.isBoosting ? f32(this.boostingTime + f32(dt)) : 0;
     if (this.isBoosting) {
-      if (!this._unlimitedBoost) this.boost = Math.max(this.boost - K.BOOST_USED_PER_SECOND * dt, 0);
+      if (!this._unlimitedBoost) this.boost = Math.max(f32(this.boost - f32(f32(K.BOOST_USED_PER_SECOND) * f32(dt))), 0);
       this.extForce.addScaled(_fwd, this.isOnGround ? K.BOOST_ACCEL_GROUND : K.BOOST_ACCEL_AIR);
     }
     this.boost = Math.min(this.boost, K.BOOST_MAX);
@@ -729,14 +740,14 @@ export class Car {
     if (this.isDemoed) return;
     const s2 = this.vel.lenSq();
     const was = this.isSupersonic;
-    if (this.isSupersonic && this.supersonicTime < K.SUPERSONIC_MAINTAIN_MAX_TIME) {
+    if (this.isSupersonic && this.supersonicTime < T_SUPERSONIC_MAINTAIN) {
       this.isSupersonic = s2 >= K.SUPERSONIC_MAINTAIN_MIN_SPEED * K.SUPERSONIC_MAINTAIN_MIN_SPEED;
     } else {
       this.isSupersonic = s2 >= K.SUPERSONIC_START_SPEED * K.SUPERSONIC_START_SPEED;
     }
-    this.supersonicTime = this.isSupersonic ? this.supersonicTime + dt : 0;
+    this.supersonicTime = this.isSupersonic ? f32(this.supersonicTime + f32(dt)) : 0;
     if (this.isSupersonic && !was) this.events.push('supersonic');
-    if (this.bumpCooldown > 0) this.bumpCooldown = Math.max(this.bumpCooldown - dt, 0);
+    if (this.bumpCooldown > 0) this.bumpCooldown = Math.max(f32(this.bumpCooldown - f32(dt)), 0);
     this.lastJump = !!this.controls.jump;
   }
 
