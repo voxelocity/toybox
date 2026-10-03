@@ -164,6 +164,21 @@ for (const tr of [1, 1.5, 2]) {
   const at = (v) => { const i = marks.findIndex((y) => y >= v); return i < 0 ? '-' : f2((i + 1) * DT); };
   out(`transition speed ${tr}`, `car->ball cam yaw 0->90: 10% ${at(9)} s, 50% ${at(45)} s, 90% ${at(81)} s, 99% ${at(89.1)} s`);
 }
+// 9b. demolished: the camera stays put, turns to follow the demolisher and zooms in; respawn starts over
+{
+  const cam = makeCam(); const s = carState({ x: 0, y: 0, z: 17 }, { x: 1000, y: 0, z: 0 }, quat(0));
+  run(cam, s, physCar(true), ballFar, 120);
+  const at = { ...cam.pos };
+  const attacker = { pos: { x: 300, y: 0, z: 17 }, isDemoed: false };
+  cam.demolisher = attacker; s.demoed = true;
+  for (let i = 0; i < 120; i++) { attacker.pos.y += 1500 * DT; cam.updateCar(DT, s, null, ballFar, { x: 0, y: 0 }); }
+  const moved = Math.hypot(cam.pos.x - at.x, cam.pos.y - at.y, cam.pos.z - at.z);
+  const toAtt = Math.atan2(attacker.pos.y - cam.pos.y, attacker.pos.x - cam.pos.x) * D;
+  out('demolished (2 s)', `camera moved ${f1(moved)} uu, yaw ${f1(cam.rot.y * D)} (attacker at ${f1(toAtt)}), hfov ${f2(cam.hfov)}`);
+  s.demoed = false; s.pos = { x: -2048, y: -2560, z: 17 }; s.vel = { x: 0, y: 0, z: 0 }; s.quat = quat(Math.PI / 4);
+  run(cam, s, physCar(true), ballFar, 1);
+  out('respawn (first frame)', rel(cam, s));
+}
 // 10. swivel: full right stick at rest and at speed, then release
 for (const speed of [0, 2300]) {
   const cam = makeCam(); const s = carState({ x: -3000, y: 0, z: 17 }, { x: speed, y: 0, z: 0 }, quat(0));
