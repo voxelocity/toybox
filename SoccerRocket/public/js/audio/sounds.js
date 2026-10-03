@@ -35,7 +35,7 @@ function engineLoop(f0, seed, whine) {
       if (s0 + i < 0) continue;
       const t = i / sr;
       const p = Math.exp(-t / tau) - Math.exp(-t / 0.00022);
-      x[s0 + i] += A * (p + 0.45 * (r() * 2 - 1) * Math.exp(-t / (tau * 0.5)));
+      x[s0 + i] += A * (p + 0.18 * (r() * 2 - 1) * Math.exp(-t / (tau * 0.4)));
     }
   }
   // exhaust: feedback comb (pipe) + resonant body + muffling
@@ -43,7 +43,7 @@ function engineLoop(f0, seed, whine) {
   let ci = 0;
   const res = [new Biquad(sr, 'bp', 105, 1.1), new Biquad(sr, 'bp', 240, 1.8), new Biquad(sr, 'bp', 520, 2.6), new Biquad(sr, 'bp', 1180, 2.2), new Biquad(sr, 'bp', 2300, 2.0)];
   const resG = [1.0, 0.85, 0.55, 0.35, 0.15];
-  const lp = new Biquad(sr, 'lp', 3800, 0.6), lp2 = new Biquad(sr, 'lp', 5200, 0.6), hp = new Biquad(sr, 'hp', 32, 0.7);
+  const lp = new Biquad(sr, 'lp', 2600, 0.6), lp2 = new Biquad(sr, 'lp', 4200, 0.6), hp = new Biquad(sr, 'hp', 32, 0.7);
   const out = new Float32Array(n);
   const intake = new Biquad(sr, 'bp', 3200, 1.2);
   let wph = 0;
@@ -53,7 +53,7 @@ function engineLoop(f0, seed, whine) {
     let y = c * 0.35;
     for (let k = 0; k < res.length; k++) y += res[k].p(c) * resG[k];
     y = lp2.p(lp.p(y));
-    y += intake.p((r() * 2 - 1) * Math.abs(x[i])) * 0.12;
+    y += intake.p((r() * 2 - 1) * Math.abs(x[i])) * 0.05;
     if (whine) { wph += 2 * Math.PI * f0 * 3.02 / sr; y += Math.sin(wph) * whine * 0.06 + Math.sin(wph * 2.003) * whine * 0.025; }
     out[i] = hp.p(softclip(y * 1.6, 2.2));
   }
@@ -402,23 +402,27 @@ function explosion(seed, size, dur, fireworks) {
 // ---------------------------------------------------------------------------
 function horn(dur = 2.7, notes = [233.08, 293.66, 349.23]) {
   const sr = SR, r = rng(13), n = Math.floor((dur + 0.6) * sr);
+  // one band-limited brassy cycle (harmonics 1..24, ~1/h^0.85)
+  const TL = 4096, table = new Float32Array(TL + 1);
+  for (let i = 0; i <= TL; i++) {
+    let v = 0;
+    for (let h = 1; h <= 24; h++) v += Math.sin(2 * Math.PI * h * i / TL) / Math.pow(h, 0.85);
+    table[i] = v;
+  }
   const ch = [];
   for (let c = 0; c < 2; c++) {
     const o = new Float32Array(n);
     for (const [vi, f] of notes.entries()) {
       const det = Math.pow(2, ((r() - 0.5) * 8) / 1200);
       const vib = 4.8 + r();
-      const phases = new Float64Array(26);
+      let ph = r();
       for (let i = 0; i < n; i++) {
         const t = i / sr;
         const scoop = 1 - 0.05 * Math.exp(-t / 0.06);
         const ff = f * det * scoop * (1 + 0.0035 * Math.sin(2 * Math.PI * vib * t + vi + c));
-        let s = 0;
-        for (let h = 1; h <= 24; h++) {
-          if (ff * h > sr * 0.45) break;
-          phases[h] += 2 * Math.PI * ff * h / sr;
-          s += Math.sin(phases[h]) / Math.pow(h, 0.85);
-        }
+        ph += ff / sr; ph -= Math.floor(ph);
+        const x = ph * TL, k = x | 0, fr = x - k;
+        const s = table[k] + (table[k + 1] - table[k]) * fr;
         const env = Math.min(1, t / 0.06) * (t > dur ? Math.exp(-(t - dur) / 0.12) : 1);
         o[i] += s * env * 0.3;
       }

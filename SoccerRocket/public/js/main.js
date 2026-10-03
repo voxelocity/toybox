@@ -450,7 +450,7 @@ class App {
     if (this.mode !== 'match') return;
     const labels = { shot: 'Shot on goal', save: 'Save!', assist: 'Assist', demo: 'Demolition' };
     if (e.kind === 'goal' || !labels[e.kind]) return;
-    if (e.kind === 'save') this.view.stadium.cheer(0.6, e.player.team);
+    if (e.kind === 'save') { this.view.stadium.cheer(0.6, e.player.team); this.audio.crowdReact('save'); }
     this.hud.feedItem(`<b>${esc(e.player.name)}</b> ${labels[e.kind]} <i>+${({ shot: 20, save: 50, assist: 50, demo: 25 })[e.kind]}</i>`, e.player.team);
   }
 

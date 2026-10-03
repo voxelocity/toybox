@@ -103,11 +103,13 @@ export function addModes(out, sr, start, modes, r, pitchBend = 0, bendTime = 0.0
     const ph0 = r() * Math.PI * 2;
     let ph = ph0;
     const n = Math.min(out.length - start, Math.floor(decay * 7 * sr));
+    const tail = Math.max(1, Math.floor(n * 0.1));
     for (let i = 0; i < n; i++) {
       const t = i / sr;
       const fr = f * (1 + pitchBend * Math.exp(-t / bendTime));
       ph += 2 * Math.PI * fr / sr;
-      out[start + i] += Math.sin(ph) * amp * Math.exp(-t / decay);
+      const fade = i > n - tail ? (n - i) / tail : 1; // no click where the partial ends
+      out[start + i] += Math.sin(ph) * amp * Math.exp(-t / decay) * fade;
     }
   }
 }
