@@ -16,6 +16,18 @@ npm start
 Open http://localhost:5173. The server also prints a LAN address so you can play on a
 phone or tablet on the same Wi-Fi.
 
+### If it doesn't start
+
+- **Stuck on the loading screen:** press F12 and look at the *Console* tab. The last red
+  line says what failed. A reload with Ctrl+F5 makes sure the browser isn't running an
+  older copy of the scripts.
+- **"Compiling shaders…" takes a while:** that's the graphics driver building the
+  shaders. Windows can need 10–30 s on the first run. The next starts are faster because
+  the browser caches the result. `?q=low` builds far fewer shaders.
+- **No sound:** browsers start audio only after your first click or key press. Sounds
+  are synthesised in the background, so the crowd and explosions can come in a few
+  seconds after the menu appears.
+
 ### Getting this folder onto your PC
 
 The code lives in the `SoccerRocket/` folder of the `claude/clever-mccarthy-p84tr5` branch.
@@ -128,7 +140,8 @@ rate falls. You can also force it with `?q=low|medium|high|ultra`.
 
 ## Audio
 
-Every sound is synthesised at startup in a Web Worker; there are no sample files.
+Every sound is synthesised in a Web Worker in the background while the menu is up;
+there are no sample files.
 
 - **Engine:** combustion pulses through exhaust resonators, as three loops crossfaded by
   revs, with Doppler shift for other cars.

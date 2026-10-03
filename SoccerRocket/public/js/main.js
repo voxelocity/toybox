@@ -50,11 +50,10 @@ class App {
     this.progress(0.6, 'Loading your car…');
     this.custom = await loadCustomAssets(this.qualityPreset(), (f, t) => this.progress(0.6 + f * 0.08, t)).catch((e) => { console.warn(e); return {}; });
     this.progress(0.68, 'Building arena…');
-    await nextFrame();
+    await painted();
     this.view = new SceneView(this.renderer, this.qualityPreset(), this.custom);
-    this.progress(0.7, 'Synthesising sound…');
-    await this.audio.init((f) => this.progress(0.7 + f * 0.28, 'Synthesising sound…'));
-    this.progress(1, 'Ready');
+    // Sounds are synthesised in the background and switch on as they arrive.
+    await this.audio.init().catch((e) => console.warn('[audio]', e));
 
     this.acc = 0;
     this.time = 0;
@@ -71,6 +70,12 @@ class App {
     this.checkOrientation();
 
     this.toMainMenu();
+    // Compile every shader while the loading screen is up. On Windows (ANGLE /
+    // Direct3D) this can take a while and would otherwise freeze the first frame.
+    this.progress(0.75, 'Compiling shaders…');
+    await painted();
+    await this.renderer.warmUp((f) => this.progress(0.75 + f * 0.25, 'Compiling shaders…'));
+    this.progress(1, 'Ready');
     $('loading').classList.add('fade');
     setTimeout(() => $('loading').remove(), 700);
     window.__ready = true;
@@ -79,6 +84,7 @@ class App {
   }
 
   progress(f, text) {
+    if (this.failed) return;
     const fill = $('loadfill'), t = $('loadtext');
     if (fill) fill.style.width = `${Math.round(f * 100)}%`;
     if (t && text) t.textContent = text;
@@ -544,12 +550,14 @@ class App {
   }
 }
 
-function nextFrame() { return new Promise((r) => requestAnimationFrame(() => r())); }
+/** Resolves after the browser has painted, so loading text shows before blocking work. */
+function painted() { return new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0))); }
 
 const app = new App();
 window.app = app;
 app.boot().catch((e) => {
   console.error(e);
+  app.failed = true;
   const t = $('loadtext');
   if (t) t.textContent = 'Failed to start: ' + e.message;
 });

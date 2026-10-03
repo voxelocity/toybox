@@ -86,7 +86,7 @@ export class Renderer {
     this.q = q;
     const r = this.renderer;
     r.shadowMap.enabled = q.shadowSize > 0;
-    r.shadowMap.type = q.shadowSize >= 2048 ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
+    r.shadowMap.type = THREE.PCFShadowMap; // PCFSoftShadowMap is deprecated in this three.js release
     this._setupLights();
     this._setupComposer();
     this.resize();
@@ -201,6 +201,35 @@ export class Renderer {
     } else {
       this.renderer.render(this.scene, this.camera);
     }
+  }
+
+  /**
+   * Compiles the shaders of everything in the scene, including effects that are
+   * hidden until used, then draws one frame (shadow and post-processing shaders).
+   * With KHR_parallel_shader_compile the compile runs off the main thread.
+   */
+  async warmUp(onProgress) {
+    const r = this.renderer;
+    const hidden = [];
+    this.scene.traverse((o) => { if (!o.visible) { hidden.push(o); o.visible = true; } });
+    try {
+      if (r.compileAsync) {
+        // the scene is drawn into the composer's linear HDR target, so compile that variant
+        const prev = r.getRenderTarget();
+        r.setRenderTarget(this.composer ? this.composer.readBuffer : null);
+        const done = r.compileAsync(this.scene, this.camera);
+        r.setRenderTarget(prev);
+        await done;
+      }
+    } catch (e) {
+      console.warn('shader pre-compile failed', e);
+    } finally {
+      for (const o of hidden) o.visible = false;
+    }
+    onProgress && onProgress(0.8);
+    await new Promise((res) => requestAnimationFrame(() => setTimeout(res, 0)));
+    this.render(0);
+    onProgress && onProgress(1);
   }
 
   doFlash(color, amount = 1) {

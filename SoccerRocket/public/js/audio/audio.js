@@ -5,6 +5,7 @@ import { SOUND_LIST } from './sounds.js';
 
 const SPEED_OF_SOUND = 34300; // uu/s
 const ENGINE_BASES = [['engine_low', 56], ['engine_mid', 150], ['engine_high', 330]];
+const VOICE_SOUNDS = ['engine_low', 'engine_mid', 'engine_high', 'boost_loop', 'skid_loop', 'wind_loop'];
 
 export class AudioEngine {
   constructor(settings) {
@@ -21,72 +22,106 @@ export class AudioEngine {
     this.lastListener = null;
   }
 
-  async init(onProgress) {
+  /**
+   * Builds the audio graph and starts synthesising every sound in a worker.
+   * Resolves as soon as the graph exists: the game never waits for sound.
+   * Each buffer becomes playable the moment it arrives.
+   */
+  async init() {
     const AC = window.AudioContext || window.webkitAudioContext;
-    if (!AC) { onProgress && onProgress(1); return; }
-    try { this.ctx = new AC({ latencyHint: 'interactive' }); } catch { this.ctx = new AC(); }
-    const ctx = this.ctx;
-    // master -> limiter -> out
-    this.master = ctx.createGain();
-    this.limiter = ctx.createDynamicsCompressor();
-    this.limiter.threshold.value = -10; this.limiter.knee.value = 6; this.limiter.ratio.value = 8;
-    this.limiter.attack.value = 0.003; this.limiter.release.value = 0.15;
-    this.master.connect(this.limiter).connect(ctx.destination);
-    this.bus = {};
-    for (const k of ['sfx', 'engine', 'crowd', 'ui']) { this.bus[k] = ctx.createGain(); this.bus[k].connect(this.master); }
-    this.reverb = ctx.createConvolver();
-    this.reverbSend = ctx.createGain();
-    this.reverbSend.gain.value = 0.55;
-    this.reverbSend.connect(this.reverb).connect(this.bus.sfx);
-    this.applyVolumes();
-    // Gameplay-critical sounds first; crowd / explosions / horns keep
-    // synthesising in the background after the game has started.
-    const essentialIdx = SOUND_LIST.findIndex(([n]) => n === 'skid_loop');
-    const essentialFrac = (essentialIdx + 1) / SOUND_LIST.length;
-    await new Promise((resolveEssential) => {
-      this.generate((f) => {
-        onProgress && onProgress(Math.min(1, f / essentialFrac));
-        if (f >= essentialFrac) resolveEssential();
-      }).then(() => { this.allReady = true; resolveEssential(); });
-    });
-    if (this.buffers.ir) this.reverb.buffer = this.buffers.ir;
+    if (!AC) return;
+    try {
+      try { this.ctx = new AC({ latencyHint: 'interactive' }); } catch { this.ctx = new AC(); }
+      const ctx = this.ctx;
+      // master -> limiter -> out
+      this.master = ctx.createGain();
+      this.limiter = ctx.createDynamicsCompressor();
+      this.limiter.threshold.value = -10; this.limiter.knee.value = 6; this.limiter.ratio.value = 8;
+      this.limiter.attack.value = 0.003; this.limiter.release.value = 0.15;
+      this.master.connect(this.limiter).connect(ctx.destination);
+      this.bus = {};
+      for (const k of ['sfx', 'engine', 'crowd', 'ui']) { this.bus[k] = ctx.createGain(); this.bus[k].connect(this.master); }
+      this.reverb = ctx.createConvolver();
+      this.reverbSend = ctx.createGain();
+      this.reverbSend.gain.value = 0.55;
+      this.reverbSend.connect(this.reverb).connect(this.bus.sfx);
+      this.applyVolumes();
+    } catch (e) {
+      console.warn('[audio] disabled:', e);
+      this.ctx = null;
+      return;
+    }
     this.ready = true;
-    if (this.unlocked) this.startAmbience();
-  }
-
-  generate(onProgress) {
-    return new Promise((resolve) => {
-      const accept = (d) => {
-        const buf = this.ctx.createBuffer(d.ch.length, d.ch[0].length, d.sr);
-        d.ch.forEach((c, i) => buf.copyToChannel(c, i));
-        this.buffers[d.name] = buf;
-        if (d.name === 'crowd_loop' && this.unlocked && this.ready) this.startAmbience();
-      };
-      let worker = null;
-      try { worker = new Worker(new URL('./gen-worker.js', import.meta.url), { type: 'module' }); } catch { worker = null; }
-      if (worker) {
-        const timeout = setTimeout(() => { worker.terminate(); this.generateMain(onProgress).then(resolve); }, 60000);
-        worker.onmessage = (e) => {
-          const d = e.data;
-          if (d.type === 'sound') { accept(d); onProgress && onProgress(d.progress); }
-          else if (d.type === 'done') { clearTimeout(timeout); worker.terminate(); resolve(); }
-        };
-        worker.onerror = () => { clearTimeout(timeout); worker.terminate(); this.generateMain(onProgress).then(resolve); };
-        worker.postMessage({ cmd: 'gen' });
-      } else this.generateMain(onProgress).then(resolve);
+    this.generate().then(() => {
+      this.allReady = true;
+      const missing = SOUND_LIST.filter(([n]) => !this.buffers[n]).map(([n]) => n);
+      if (missing.length) console.warn('[audio] could not synthesise:', missing.join(', '));
     });
   }
 
-  async generateMain(onProgress) {
-    // fallback: synthesise on the main thread, yielding between sounds
-    for (let i = 0; i < SOUND_LIST.length; i++) {
-      const [name, fn] = SOUND_LIST[i];
-      if (this.buffers[name]) continue;
-      const r = fn();
-      const buf = this.ctx.createBuffer(r.ch.length, r.ch[0].length, r.sr);
-      r.ch.forEach((c, k) => buf.copyToChannel(c, k));
+  /** Stores a synthesised sound as an AudioBuffer; one bad sound never stops the rest. */
+  accept(name, sr, ch) {
+    try {
+      const buf = this.ctx.createBuffer(ch.length, ch[0].length, sr);
+      ch.forEach((c, i) => buf.copyToChannel(c, i));
       this.buffers[name] = buf;
-      onProgress && onProgress((i + 1) / SOUND_LIST.length);
+      if (name === 'ir') this.setImpulse(buf);
+      if (name === 'crowd_loop' && this.unlocked) this.startAmbience();
+    } catch (e) {
+      console.warn(`[audio] skipped ${name}:`, e);
+    }
+  }
+
+  /**
+   * A ConvolverNode only takes a buffer at the context's own sample rate
+   * (most Windows devices run at 48 kHz, the IR is made at 44.1 kHz).
+   */
+  setImpulse(buf) {
+    try {
+      this.reverb.buffer = resample(this.ctx, buf, this.ctx.sampleRate);
+    } catch (e) {
+      console.warn('[audio] reverb disabled:', e);
+      try { this.reverbSend.disconnect(); } catch { /* already */ }
+    }
+  }
+
+  generate() {
+    return new Promise((resolve) => {
+      let worker = null, watchdog = 0, finished = false;
+      const finish = () => { if (finished) return; finished = true; clearTimeout(watchdog); if (worker) worker.terminate(); resolve(); };
+      // A worker that cannot load or dies part way is replaced by main-thread
+      // synthesis of whatever is still missing.
+      const fallback = (why) => {
+        if (finished) return;
+        finished = true;
+        clearTimeout(watchdog);
+        if (worker) worker.terminate();
+        console.warn('[audio] worker failed (' + why + '), synthesising on the main thread');
+        this.generateMain().then(resolve);
+      };
+      // reset on every message, so a slow machine is fine as long as sounds keep coming
+      const arm = () => { clearTimeout(watchdog); watchdog = setTimeout(() => fallback('no response'), 30000); };
+      try { worker = new Worker(new URL('./gen-worker.js', import.meta.url), { type: 'module' }); } catch (e) { worker = null; }
+      if (!worker) { fallback('unsupported'); return; }
+      worker.onmessage = (e) => {
+        const d = e.data;
+        arm();
+        if (d.type === 'sound') this.accept(d.name, d.sr, d.ch);
+        else if (d.type === 'error') console.warn(`[audio] ${d.name} failed:`, d.message);
+        else if (d.type === 'done') finish();
+      };
+      worker.onerror = (e) => { e.preventDefault && e.preventDefault(); fallback(e.message || 'error'); };
+      worker.onmessageerror = () => fallback('message error');
+      arm();
+      worker.postMessage({ cmd: 'gen' });
+    });
+  }
+
+  async generateMain() {
+    // fallback: synthesise on the main thread, yielding between sounds
+    for (const [name, fn] of SOUND_LIST) {
+      if (this.buffers[name]) continue;
+      try { const r = fn(); this.accept(name, r.sr, r.ch); } catch (e) { console.warn(`[audio] ${name} failed:`, e); }
       await new Promise((res) => setTimeout(res, 0));
     }
   }
@@ -186,7 +221,8 @@ export class AudioEngine {
     for (const v of this.carVoices) this.stopVoice(v);
     this.carVoices = [];
     this.players = players;
-    if (!this.ready || !this.ctx) { this.pendingPlayers = players; return; }
+    // engine loops are among the first sounds made; until they exist, retry from update()
+    if (!this.ready || !this.ctx || !VOICE_SOUNDS.every((n) => this.buffers[n])) { this.pendingPlayers = players; return; }
     this.pendingPlayers = null;
     const ctx = this.ctx;
     players.forEach((p) => {
@@ -373,4 +409,19 @@ export class AudioEngine {
 function setPannerPos(p, pos) {
   if (p.positionX) { p.positionX.value = pos.x; p.positionY.value = pos.y; p.positionZ.value = pos.z; }
   else p.setPosition(pos.x, pos.y, pos.z);
+}
+
+/** Linear resample to the context rate (used for the reverb impulse). */
+function resample(ctx, buf, rate) {
+  if (buf.sampleRate === rate) return buf;
+  const k = buf.sampleRate / rate, n = Math.max(1, Math.floor(buf.length / k));
+  const out = ctx.createBuffer(buf.numberOfChannels, n, rate);
+  for (let c = 0; c < buf.numberOfChannels; c++) {
+    const src = buf.getChannelData(c), dst = out.getChannelData(c), last = src.length - 1;
+    for (let i = 0; i < n; i++) {
+      const x = i * k, j = Math.floor(x), f = x - j;
+      dst[i] = j >= last ? src[last] : src[j] + (src[j + 1] - src[j]) * f;
+    }
+  }
+  return out;
 }

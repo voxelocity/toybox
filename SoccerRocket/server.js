@@ -28,6 +28,7 @@ const TYPES = {
 // Recursively find models and textures in assets/ and public/assets/models/.
 function findAssets() {
   const found = [], images = [];
+  let config = null;
   const walk = (dir, urlBase, depth) => {
     let entries;
     try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
@@ -37,12 +38,13 @@ function findAssets() {
       const ext = path.extname(e.name).toLowerCase();
       if (MODEL_EXT.includes(ext)) found.push({ url: urlBase + encodeURIComponent(e.name), name: e.name, size: fs.statSync(full).size });
       if (IMAGE_EXT.includes(ext)) images.push({ url: urlBase + encodeURIComponent(e.name), name: e.name });
+      if (depth === 0 && !config && e.name.toLowerCase() === 'soccerrocket.json') config = urlBase + encodeURIComponent(e.name);
     }
   };
   walk(USER_ASSETS, 'project-assets/', 0);
   walk(path.join(ROOT, 'assets', 'models'), 'assets/models/', 0);
   const rank = (m) => (/fennec/i.test(m.name) ? 0 : /car|body|chassis/i.test(m.name) ? 1 : 2) * 10 + MODEL_EXT.indexOf(path.extname(m.name).toLowerCase());
-  return { models: found.sort((a, b) => rank(a) - rank(b)), images };
+  return { models: found.sort((a, b) => rank(a) - rank(b)), images, config };
 }
 
 function resolveFile(pathname) {

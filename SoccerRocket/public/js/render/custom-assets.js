@@ -52,6 +52,12 @@ async function listAssets() {
 }
 
 async function loadConfig(list) {
+  // the server says where the config is (or that there is none); static hosting has to probe
+  if ('config' in list) {
+    if (!list.config) return {};
+    try { const r = await fetch(list.config, { cache: 'no-cache' }); if (r.ok) return await r.json(); } catch (e) { console.warn('[assets] bad soccerrocket.json', e); }
+    return {};
+  }
   for (const base of ['project-assets/', 'assets/models/']) {
     try { const r = await fetch(base + 'soccerrocket.json', { cache: 'no-cache' }); if (r.ok) return await r.json(); } catch { /* none */ }
   }
