@@ -98,18 +98,20 @@ export class Effects {
 
   // ---- events -------------------------------------------------------------
   ballHit(p, normal, dv, team) {
+    // Rocket League keeps touches subtle: a quick flash at the contact point and
+    // a few sparks; only hard hits add a small ring. Sizes are in metres (ball r 0.91).
     const c = TEAM_RGB[team] || WHITE, A = this.add;
     const strength = Math.min(1, dv / 3000);
-    const n = this.n(6 + strength * 40);
+    const n = this.n(3 + strength * 12);
     for (let i = 0; i < n; i++) {
-      const sp = rand(2, 14) * (0.4 + strength);
-      const dx = normal.x + rand(-0.8, 0.8), dy = normal.y + rand(-0.8, 0.8), dz = normal.z + rand(-0.8, 0.8);
-      A.color(A.spawn(p.x, p.y, p.z, dx * sp, dy * sp, dz * sp, rand(0.2, 0.5), rand(0.05, 0.09), 0.02, 2.5, 6, 2), 1, 0.95, 0.8, 1, c[0], c[1], c[2], 0.8);
+      const sp = rand(1.5, 6) * (0.4 + strength);
+      const dx = normal.x + rand(-0.6, 0.6), dy = normal.y + rand(-0.6, 0.6), dz = normal.z + rand(-0.6, 0.6);
+      A.color(A.spawn(p.x, p.y, p.z, dx * sp, dy * sp, dz * sp, rand(0.12, 0.3), rand(0.025, 0.045), 0.01, 3, 6, 2), 1, 0.95, 0.8, 1, c[0], c[1], c[2], 0.8);
     }
-    A.color(A.spawn(p.x, p.y, p.z, 0, 0, 0, 0.18, 0.6 + strength * 2.2, 1.5 + strength * 3, 0, 0, 7), 1, 1, 1, 0.9, c[0], c[1], c[2], 0);
-    if (dv > 1300) {
-      this.shockwave(p.x, p.y, p.z, c, 2.5 + strength * 4, 0.35);
-      this.flashLight(p, c, 25 * strength, 0.25, 15);
+    A.color(A.spawn(p.x, p.y, p.z, 0, 0, 0, 0.1, 0.2 + strength * 0.35, 0.45 + strength * 0.7, 0, 0, 7), 1, 1, 1, 0.75, c[0], c[1], c[2], 0);
+    if (dv > 1800) {
+      this.shockwave(p.x, p.y, p.z, c, 1 + strength * 1.4, 0.22);
+      this.flashLight(p, c, 8 * strength, 0.15, 8);
     }
   }
 

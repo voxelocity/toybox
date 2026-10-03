@@ -445,7 +445,54 @@ async function prepareBall(root, images, cfg, opts) {
     holder.add(m);
     wm.decompose(m.position, m.quaternion, m.scale);
   }
+  container.updateMatrixWorld(true);
+  for (const m of meshes) if (isInsideOut(m)) flipFaces(m.geometry);
   return { container };
+}
+
+/**
+ * True when most of a closed mesh's front faces point toward its centre. Some
+ * exports (this ball, from UModel) come out inside-out: the near side gets
+ * culled and the far side's inner faces are drawn and lit from inside.
+ * The front-face normal in world space is the object-space winding normal
+ * times the normal matrix, which three.js keeps as "front" even under a mirror.
+ */
+function isInsideOut(mesh) {
+  const g = mesh.geometry, p = g.attributes.position, idx = g.index;
+  if (!p) return false;
+  g.computeBoundingBox();
+  const center = g.boundingBox.getCenter(new THREE.Vector3());
+  const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), n = new THREE.Vector3(), d = new THREE.Vector3();
+  const tris = idx ? idx.count / 3 : p.count / 3, step = Math.max(1, Math.floor(tris / 500));
+  let inward = 0, outward = 0;
+  for (let t = 0; t < tris; t += step) {
+    const i0 = idx ? idx.getX(t * 3) : t * 3, i1 = idx ? idx.getX(t * 3 + 1) : t * 3 + 1, i2 = idx ? idx.getX(t * 3 + 2) : t * 3 + 2;
+    a.fromBufferAttribute(p, i0); b.fromBufferAttribute(p, i1); c.fromBufferAttribute(p, i2);
+    n.subVectors(b, a).cross(d.subVectors(c, a));
+    d.copy(a).add(b).add(c).multiplyScalar(1 / 3).sub(center);
+    const s = n.dot(d);
+    if (s > 0) outward++; else if (s < 0) inward++;
+  }
+  return inward > outward * 3;
+}
+
+/** Reverses triangle winding and normals in place. */
+function flipFaces(g) {
+  const idx = g.index;
+  if (idx) {
+    for (let i = 0; i < idx.count; i += 3) { const t = idx.getX(i + 1); idx.setX(i + 1, idx.getX(i + 2)); idx.setX(i + 2, t); }
+    idx.needsUpdate = true;
+  } else {
+    for (const name of Object.keys(g.attributes)) {
+      const at = g.attributes[name], k = at.itemSize, arr = at.array;
+      for (let i = 0; i < at.count; i += 3) for (let j = 0; j < k; j++) { const u = (i + 1) * k + j, v = (i + 2) * k + j; const t = arr[u]; arr[u] = arr[v]; arr[v] = t; }
+      at.needsUpdate = true;
+    }
+  }
+  const nrm = g.attributes.normal;
+  if (nrm) { for (let i = 0; i < nrm.array.length; i++) nrm.array[i] = -nrm.array[i]; nrm.needsUpdate = true; }
+  const tan = g.attributes.tangent;
+  if (tan) { for (let i = 0; i < tan.count; i++) for (let j = 0; j < 3; j++) tan.array[i * 4 + j] = -tan.array[i * 4 + j]; tan.needsUpdate = true; }
 }
 
 /** A per-car copy of the prepared car with team paint. */
