@@ -1,0 +1,67 @@
+{
+ "name": "box_goalpost",
+ "desc": "Car on its side hits the goal post edge at 1400 uu/s (until a wheel touches).",
+ "ticks": 35,
+ "cars": [
+  {
+   "team": 0,
+   "pos": [
+    960,
+    4700,
+    70
+   ],
+   "yaw": 1.7207963267948965,
+   "boost": 0,
+   "pitch": 0.1,
+   "roll": 1.8207963267948966,
+   "vel": [
+    0,
+    1400,
+    0
+   ],
+   "isOnGround": false
+  }
+ ],
+ "metrics": [
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "vy",
+   "tick": 35,
+   "tol": 15,
+   "label": "car0.vy@35"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "vx",
+   "tick": 35,
+   "tol": 15,
+   "label": "car0.vx@35"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "y",
+   "tick": 35,
+   "tol": 2,
+   "label": "car0.y@35"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "x",
+   "tick": 35,
+   "tol": 2,
+   "label": "car0.x@35"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "upz",
+   "tick": 35,
+   "tol": 0.02,
+   "label": "car0.upz@35"
+  }
+ ]
+}

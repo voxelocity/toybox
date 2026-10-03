@@ -1,0 +1,67 @@
+{
+ "name": "box_ceiling_edge",
+ "desc": "Car flying on its side into the ceiling-to-side-wall rounding at 1500 uu/s (until a wheel touches).",
+ "ticks": 32,
+ "cars": [
+  {
+   "team": 0,
+   "pos": [
+    3600,
+    0,
+    1800
+   ],
+   "yaw": 0.2,
+   "boost": 0,
+   "pitch": 0.15,
+   "roll": 1.8707963267948966,
+   "vel": [
+    1200,
+    0,
+    900
+   ],
+   "isOnGround": false
+  }
+ ],
+ "metrics": [
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "vx",
+   "tick": 32,
+   "tol": 15,
+   "label": "car0.vx@32"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "vz",
+   "tick": 32,
+   "tol": 15,
+   "label": "car0.vz@32"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "x",
+   "tick": 32,
+   "tol": 2,
+   "label": "car0.x@32"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "z",
+   "tick": 32,
+   "tol": 2,
+   "label": "car0.z@32"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "upz",
+   "tick": 32,
+   "tol": 0.02,
+   "label": "car0.upz@32"
+  }
+ ]
+}

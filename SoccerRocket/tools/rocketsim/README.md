@@ -10,8 +10,13 @@ tools/rocketsim/build.sh                       # clone + build RocketSim and rs_
 node tools/rocketsim/compare.mjs --summary     # one line per scenario
 node tools/rocketsim/compare.mjs turn_ flip_   # detail for matching scenarios
 node tools/rocketsim/compare.mjs --trace flip_front --obj car0 --every 6
+node tools/rocketsim/onestep.mjs hit_2300_offset --obj car0   # single-tick errors, see below
 node tools/rocketsim/make-scenarios.mjs        # regenerate scenarios/*.json
 ```
+
+`onestep.mjs` sets our bodies to RocketSim's state before every tick and compares one simulated tick, so
+errors do not accumulate: it shows which tick (a contact, a landing, a wheel touching) our physics handles
+differently. Car-internal state (wheel contact, jump and tyre-friction memory) still comes from our own run.
 
 RocketSim normally loads collision meshes dumped from the game. Here `export-cmf.mjs` writes *our* parametric
 arena into RocketSim's `.cmf` format instead, so both engines collide with identical geometry.

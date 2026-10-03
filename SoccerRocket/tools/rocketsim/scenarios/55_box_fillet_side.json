@@ -1,0 +1,72 @@
+{
+ "name": "box_fillet_side",
+ "desc": "Car on its side slides into the +x floor-to-wall fillet at 1500 uu/s (until a wheel touches).",
+ "ticks": 30,
+ "cars": [
+  {
+   "team": 0,
+   "pos": [
+    3500,
+    0,
+    70
+   ],
+   "yaw": 0.1,
+   "boost": 0,
+   "pitch": 0.12,
+   "roll": 1.7707963267948965,
+   "vel": [
+    1500,
+    0,
+    -300
+   ],
+   "angVel": [
+    0,
+    0,
+    1.5
+   ],
+   "isOnGround": false
+  }
+ ],
+ "metrics": [
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "x",
+   "tick": 30,
+   "tol": 2,
+   "label": "car0.x@30"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "z",
+   "tick": 30,
+   "tol": 2,
+   "label": "car0.z@30"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "vx",
+   "tick": 30,
+   "tol": 15,
+   "label": "car0.vx@30"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "vz",
+   "tick": 30,
+   "tol": 15,
+   "label": "car0.vz@30"
+  },
+  {
+   "fn": "at",
+   "obj": "car0",
+   "field": "upz",
+   "tick": 30,
+   "tol": 0.02,
+   "label": "car0.upz@30"
+  }
+ ]
+}
