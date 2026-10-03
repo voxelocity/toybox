@@ -13,6 +13,9 @@
 //   --trace    also record a Chrome trace and report GC pauses
 //   --realtime use real frame times instead of the fixed step (shows the
 //              fixed-step catch-up behaviour after a hitch)
+//   --fast     half the gap between events and skip the slow parts of the goal
+//              (goal pause, replay lead-in): a full cycle in ~500 frames instead
+//              of ~950, for slow software-GPU runs at high quality
 //   --sync     wait for the GPU after every frame (readPixels) and report that
 //              wait separately: shows fill-rate / overdraw cost (SwiftShader
 //              renders on the CPU, so only relative numbers mean anything)
@@ -33,6 +36,7 @@ const JSON_OUT = opt('json', null);
 const TRACE = !!opt('trace', false);
 const REALTIME = !!opt('realtime', false);
 const SYNC = !!opt('sync', false);
+const FAST = !!opt('fast', false);
 const EXE = process.env.CHROME || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
 
 // ---- in-page harness ------------------------------------------------------------------
@@ -54,7 +58,7 @@ function glTimers() {
   }
 }
 
-function harness({ seconds, realtime, sync }) {
+function harness({ seconds, realtime, sync, fast }) {
   const app = window.app, R = app.renderer.renderer;
   const H = window.__spk = { frames: [], marks: [], done: false, error: null, programs0: R.info.programs.length };
   window.__gl.linked = []; window.__gl.used = []; // boot-time compiles are not part of the run
@@ -112,8 +116,12 @@ function harness({ seconds, realtime, sync }) {
   function wall() { ballAt(3000, -1500, 500, 6000, 0, 0); mark('wall'); }
   function* goal() {
     ballAt(0, 4700, 300, 0, 3000, 0); mark('goal');
-    for (let i = 0; i < 600 && m().state !== 'replay'; i++) yield 1;
-    yield 150; // watch the replay until the replay explosion has fired
+    for (let i = 0; i < 600 && m().state !== 'replay'; i++) {
+      if (fast && i === 30 && m().state === 'goal') m().goalTimer = Math.min(m().goalTimer, 0.1);
+      yield 1;
+    }
+    if (fast) { yield 30; const rs = app.replayState; if (rs) rs.t = Math.max(rs.t, rs.goalTime - 1.2); } else yield 150;
+    // watch the replay until the replay explosion has fired
     for (let i = 0; i < 400 && app.replayState && !app.replayState.exploded; i++) yield 1;
     yield 30;
     if (app.replayState) { app.endReplay(); mark('endReplay'); }
@@ -121,15 +129,16 @@ function harness({ seconds, realtime, sync }) {
     skipCountdown();
     yield 30;
   }
+  const gap = fast ? 30 : 60;
   function* cycle() {
-    hit(C(0)); yield 60;
-    bump(C(1), C(3)); yield 60;
-    demo(C(2), C(4)); yield 60;
-    wall(); yield 60;
-    hit(C(5), 600); yield 60;
+    hit(C(0)); yield gap;
+    bump(C(1), C(3)); yield gap;
+    demo(C(2), C(4)); yield gap;
+    wall(); yield gap;
+    hit(C(5), 600); yield gap;
     // pile-up: two demos, a bump and a hit in the same tick
     demo(C(1), C(3), 2500, 2000); demo(C(4), C(2), -2500, -2000); bump(C(5), C(0), 0, -3500); hit(C(0), 1200); mark('pileup');
-    yield 60;
+    yield gap;
     yield* goal();
   }
   function* script() {
@@ -284,7 +293,7 @@ async function run(q) {
     await page.waitForFunction(() => window.app.audio.allReady || !window.app.audio.ctx, null, { timeout: 120000 }).catch(() => {});
     await page.waitForTimeout(1000);
     if (TRACE) await browser.startTracing(page, { categories: ['disabled-by-default-v8.gc', 'v8', 'devtools.timeline'] });
-    const boot = await page.evaluate(harness, { seconds: SECONDS, realtime: REALTIME, sync: SYNC });
+    const boot = await page.evaluate(harness, { seconds: SECONDS, realtime: REALTIME, sync: SYNC, fast: FAST });
     boot.bootMs = bootMs;
     for (let lastLog = Date.now(); ;) {
       const st = await page.evaluate(() => ({ n: window.__spk.frames.length, done: window.__spk.done || !!window.__spk.error, progs: window.app.renderer.renderer.info.programs.length }));
