@@ -70,6 +70,7 @@ export const SUSPENSION_STIFFNESS = 500;
 export const WHEELS_DAMPING_COMPRESSION = 25;
 export const WHEELS_DAMPING_RELAXATION = 40;
 export const MAX_SUSPENSION_TRAVEL = 12;
+export const SUSPENSION_SUBTRACTION = 2.5;   // ray reach = rest length + radius - 2.5
 export const SUSPENSION_FORCE_SCALE_FRONT = 36 - 1 / 4;
 export const SUSPENSION_FORCE_SCALE_BACK = 54 + 1 / 4 + 1.5 / 100;
 

@@ -33,7 +33,8 @@ export class Car {
         front: i < 2,
         local: new V3(def.x, def.y * side, def.z),
         radius: def.radius,
-        rest: def.rest - K.MAX_SUSPENSION_TRAVEL,
+        rest: def.rest - K.MAX_SUSPENSION_TRAVEL,          // spring is relaxed at this length
+        reach: def.rest + def.radius - K.SUSPENSION_SUBTRACTION, // ray length (contact range)
         scale: i < 2 ? K.SUSPENSION_FORCE_SCALE_FRONT : K.SUSPENSION_FORCE_SCALE_BACK,
         contact: false,
         normal: new V3(0, 0, 1),
@@ -143,7 +144,7 @@ export class Car {
     const mesh = world.mesh;
     for (const w of this.wheels) {
       R.mulV(w.local, _v).add(this.pos); // hardpoint
-      const len = w.rest + w.radius;
+      const len = w.reach;
       w.hard = w.hard || new V3();
       w.hard.copy(_v);
       if (mesh.raycast(_v.x, _v.y, _v.z, -up.x, -up.y, -up.z, len, _hit)) {

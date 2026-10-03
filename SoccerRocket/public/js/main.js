@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { loadSettings, saveSettings, QUALITY_PRESETS, detectQuality, isTouchDevice } from './settings.js';
 import { Renderer } from './render/renderer.js';
 import { SceneView } from './render/scene-view.js';
+import { loadCustomAssets } from './render/custom-assets.js';
 import { ChaseCamera } from './render/camera.js';
 import { Match } from './game/match.js';
 import { Input } from './game/input.js';
@@ -46,9 +47,11 @@ class App {
       console.warn('sky failed, using procedural', e);
       return this.renderer.loadSky('', null);
     });
-    this.progress(0.62, 'Building arena…');
+    this.progress(0.6, 'Loading your car…');
+    this.custom = await loadCustomAssets(this.qualityPreset(), (f, t) => this.progress(0.6 + f * 0.08, t)).catch((e) => { console.warn(e); return {}; });
+    this.progress(0.68, 'Building arena…');
     await nextFrame();
-    this.view = new SceneView(this.renderer, this.qualityPreset());
+    this.view = new SceneView(this.renderer, this.qualityPreset(), this.custom);
     this.progress(0.7, 'Synthesising sound…');
     await this.audio.init((f) => this.progress(0.7 + f * 0.28, 'Synthesising sound…'));
     this.progress(1, 'Ready');
@@ -102,7 +105,8 @@ class App {
     this.view.dispose();
     this.renderer.applyQuality(q);
     await this.renderer.loadSky('assets/hdri/').catch(() => this.renderer.loadSky('', null));
-    this.view = new SceneView(this.renderer, q);
+    this.custom = await loadCustomAssets(q).catch(() => ({}));
+    this.view = new SceneView(this.renderer, q, this.custom);
     if (this.match) this.view.setPlayers(this.decoratedPlayers(), this.settings);
     this.toast(`Graphics: ${QUALITY_PRESETS[name].label}`);
   }
@@ -338,6 +342,7 @@ class App {
       if (this.match.state !== 'play') this.match.state = 'play';
     }
     if (edge('KeyU')) { w.unlimitedBoost = !w.unlimitedBoost; this.toast(`Unlimited boost ${w.unlimitedBoost ? 'on' : 'off'}`); }
+    if (edge('KeyH')) { this.settings.showHitbox = !this.settings.showHitbox; saveSettings(this.settings); this.view.showHitboxes(this.settings.showHitbox); this.toast(`Hitbox ${this.settings.showHitbox ? 'shown' : 'hidden'}`); }
   }
 
   // ---- events --------------------------------------------------------------------

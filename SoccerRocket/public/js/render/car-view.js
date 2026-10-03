@@ -1,6 +1,7 @@
 // Visual representation of one car: model, wheels, boost flames, trails.
 import * as THREE from 'three';
-import { buildCarModel, GROUND_Z } from './car-model.js';
+import { buildCarModel, GROUND_Z, PAINTS } from './car-model.js';
+import { instantiateCar } from './custom-assets.js';
 import { Ribbon } from './particles.js';
 import { S } from './convert.js';
 import { TEAM_RGB } from './effects.js';
@@ -73,6 +74,31 @@ function nameSprite(text, team) {
 
 const _v = new THREE.Vector3(), _q = new THREE.Quaternion(), _w = new THREE.Vector3();
 
+// Wireframe of the physics hitbox and wheels (car-local), like the in-game
+// hitbox visualisers: box at the hitbox offset, circles at the wheel
+// hardpoints at rest, and the centre of mass.
+function hitboxOverlay(car) {
+  const g = new THREE.Group();
+  const mat = new THREE.LineBasicMaterial({ color: 0xd8ff3a, depthTest: false, transparent: true, opacity: 0.95 });
+  const [L, W, H] = [car.hitbox.x, car.hitbox.y, car.hitbox.z];
+  const box = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(L * S, H * S, W * S)), mat);
+  box.position.set(car.hbOffset.x * S, car.hbOffset.z * S, -car.hbOffset.y * S);
+  g.add(box);
+  for (const w of car.wheels) {
+    const pts = [];
+    for (let i = 0; i <= 48; i++) { const a = (i / 48) * Math.PI * 2; pts.push(new THREE.Vector3(Math.cos(a) * w.radius * S, Math.sin(a) * w.radius * S, 0)); }
+    const c = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), mat);
+    // wheel centre at rest: hardpoint minus the resting suspension length
+    c.position.set(w.local.x * S, (w.local.z - (w.rest - 1.95)) * S, -w.local.y * S);
+    g.add(c);
+  }
+  const com = new THREE.Mesh(new THREE.SphereGeometry(2.2 * S, 10, 8), new THREE.MeshBasicMaterial({ color: 0xd8ff3a, depthTest: false }));
+  g.add(com);
+  g.renderOrder = 40;
+  g.traverse((o) => { o.renderOrder = 40; });
+  return g;
+}
+
 export class CarView {
   constructor(scene, car, opts) {
     this.scene = scene;
@@ -80,7 +106,14 @@ export class CarView {
     this.team = car.team;
     this.effects = opts.effects;
     this.q = opts.quality;
-    const model = buildCarModel({ style: opts.style, team: car.team, paint: opts.paint || 0, accent: opts.accent || 0, quality: opts.quality });
+    let model;
+    if (opts.custom) {
+      const pc = PAINTS[opts.paint || 0] || PAINTS[0];
+      const inst = instantiateCar(opts.custom, new THREE.Color(car.team === 0 ? pc.blue : pc.orange));
+      model = { group: inst.group, wheels: inst.wheels, nozzles: inst.nozzles, custom: true };
+    } else {
+      model = buildCarModel({ style: opts.style, team: car.team, paint: opts.paint || 0, accent: opts.accent || 0, quality: opts.quality });
+    }
     this.model = model;
     this.group = model.group;
     scene.add(this.group);
@@ -119,10 +152,15 @@ export class CarView {
       this.tag.position.set(0, 85 * S, 0);
       this.group.add(this.tag);
     }
+    this.hitbox = hitboxOverlay(car);
+    this.hitbox.visible = false;
+    this.group.add(this.hitbox);
     this.emitAcc = 0; this.smokeAcc = 0; this.sprayAcc = 0;
     this.wasSupersonic = false;
     this.visible = true;
   }
+
+  showHitbox(v) { this.hitbox.visible = v; }
 
   setVisible(v) { this.group.visible = v; this.visible = v; if (!v) for (const r of this.ribbons) r.clear(); }
 
@@ -138,13 +176,13 @@ export class CarView {
     g.quaternion.set(s.quat.x, s.quat.z, -s.quat.y, s.quat.w);
     // wheels
     const W = this.model.wheels;
-    for (let i = 0; i < 4; i++) {
+    if (W) for (let i = 0; i < 4; i++) {
       const w = W[i], ws = s.wheels[i];
       w.pivot.rotation.y = -ws.steer;
       w.spin.rotation.z = -ws.spin;
-      // suspension: wheel centre = hardpoint - susLen (hardpoint z = 20.755)
-      const centreZ = 20.755 - Math.min(ws.susLen, ws.rest + 4);
-      w.pivot.position.y = centreZ * S;
+      // suspension travel relative to the resting compression (~1.95 uu)
+      const travel = (ws.rest - 1.95) - Math.min(ws.susLen, ws.rest + 4);
+      w.pivot.position.y = w.baseY + travel * S;
     }
     // boost flames
     const target = s.boosting ? 1 : 0;
@@ -192,7 +230,7 @@ export class CarView {
       this.sprayAcc += dt * 60 * Math.min(1, s.speed / 1200);
       if (this.sprayAcc >= 1) {
         const n = Math.floor(this.sprayAcc); this.sprayAcc -= n;
-        for (const wi of [2, 3]) {
+        for (const wi of (W ? [2, 3] : [])) {
           const wp = W[wi].pivot.getWorldPosition(new THREE.Vector3());
           wp.y = 0.05;
           const side = _v.set(0, 0, wi === 2 ? -1 : 1).applyQuaternion(g.quaternion);

@@ -1,19 +1,18 @@
 // Headless screenshots: node tools/shot.mjs <out.png> [query] [w] [h] [waitMs] [script]
 // Starts its own static server. Uses the preinstalled Chromium (SwiftShader).
 import { chromium } from 'playwright-core';
-import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
 const [, , out = '.shots/shot.png', query0 = '', w = '1280', h = '720', wait = '3000', script = ''] = process.argv;
-const T = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.json': 'application/json', '.webmanifest': 'application/json' };
-const srv = http.createServer((req, res) => {
-  const u = new URL(req.url, 'http://x'); let f = path.join(ROOT, decodeURIComponent(u.pathname));
-  if (fs.existsSync(f) && fs.statSync(f).isDirectory()) f = path.join(f, 'index.html');
-  fs.readFile(f, (e, d) => { if (e) { res.writeHead(404).end(); return; } res.writeHead(200, { 'content-type': T[path.extname(f)] || 'application/octet-stream' }).end(d); });
-}).listen(0);
-const port = srv.address().port;
+// run the real server (serves public/ + project assets/ + /api/models)
+import { spawn } from 'node:child_process';
+const port = 20000 + Math.floor(Math.random() * 20000);
+const srvProc = spawn(process.execPath, [path.join(ROOT, '..', 'server.js'), String(port)], { stdio: 'ignore' });
+await new Promise((r) => setTimeout(r, 600));
+const srv = { close: () => srvProc.kill() };
+
 const query = query0.includes('shot') ? query0 : (query0 ? query0 + '&shot' : '?shot');
 const exe = process.env.CHROME || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
 const browser = await chromium.launch({ executablePath: exe, headless: true, args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--autoplay-policy=no-user-gesture-required'] });

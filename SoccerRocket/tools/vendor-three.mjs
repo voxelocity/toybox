@@ -19,7 +19,14 @@ const ADDONS = [
   'postprocessing/SMAAPass.js',
   'loaders/HDRLoader.js',
   'loaders/GLTFLoader.js',
+  'loaders/DRACOLoader.js',
+  'loaders/FBXLoader.js',
+  'loaders/OBJLoader.js',
+  'loaders/MTLLoader.js',
+  'loaders/TGALoader.js',
+  'libs/meshopt_decoder.module.js',
   'utils/BufferGeometryUtils.js',
+  'utils/SkeletonUtils.js',
 ];
 
 fs.rmSync(OUT, { recursive: true, force: true });
@@ -48,6 +55,11 @@ while (queue.length) {
     queue.push(path.posix.normalize(path.posix.join(path.posix.dirname(rel), m[1])));
   }
 }
+// Draco decoder (wasm + js fallback), copied as-is
+const dracoSrc = path.join(SRC, 'examples', 'jsm', 'libs', 'draco', 'gltf');
+const dracoOut = path.join(OUT, 'addons', 'libs', 'draco');
+fs.mkdirSync(dracoOut, { recursive: true });
+for (const f of fs.readdirSync(dracoSrc)) fs.copyFileSync(path.join(dracoSrc, f), path.join(dracoOut, f));
 fs.copyFileSync(path.join(SRC, 'LICENSE'), path.join(OUT, 'LICENSE'));
 const size = (d) => fs.readdirSync(d, { withFileTypes: true }).reduce((s, e) => s + (e.isDirectory() ? size(path.join(d, e.name)) : fs.statSync(path.join(d, e.name)).size), 0);
 console.log(`vendored three r${JSON.parse(fs.readFileSync(path.join(SRC, 'package.json'))).version}: ${seen.size} addons, ${(size(OUT) / 1024).toFixed(0)} KB`);

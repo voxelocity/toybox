@@ -20,7 +20,17 @@ function panelCentres() {
 }
 
 export class BallView {
-  constructor(scene, quality) {
+  constructor(scene, quality, custom) {
+    if (custom) {
+      // the player's own ball model
+      this.uniforms = { uSeam: { value: new THREE.Color() }, uGlow: { value: 0 } };
+      this.mesh = custom.container.clone(true);
+      this.mesh.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+      scene.add(this.mesh);
+      this.targetSeam = new THREE.Color();
+      this.custom = true;
+      return;
+    }
     const centres = panelCentres();
     this.uniforms = {
       uCentres: { value: centres },

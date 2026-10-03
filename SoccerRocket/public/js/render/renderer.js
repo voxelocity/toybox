@@ -129,7 +129,7 @@ export class Renderer {
     composer.addPass(new RenderPass(this.scene, this.camera));
     composer.addPass(new ShaderPass(SanitizeShader));
     const bloomRes = q.bloom >= 2 ? 1 : 0.5;
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x * bloomRes, size.y * bloomRes), 0.75, 0.5, 1.9);
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x * bloomRes, size.y * bloomRes), 0.75, 0.5, 2.6);
     // Guard against Inf / NaN from extreme specular highlights in the half
     // float target, which the blur would otherwise smear over the screen.
     const hp = this.bloom.materialHighPassFilter;

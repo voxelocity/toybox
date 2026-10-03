@@ -146,10 +146,12 @@ export class Menu {
     nameRow.innerHTML = `<span class="lbl">Name</span><input type="text" maxlength="16" value="${esc(pl.name)}">`;
     nameRow.querySelector('input').addEventListener('input', (e) => { pl.name = e.target.value.trim() || 'Player'; this.save(); });
     right.appendChild(nameRow);
-    right.appendChild(this.cycle('Body', Object.entries(BODY_STYLES).map(([k, b]) => [k, b.label]), pl.body, (v) => { pl.body = v; this.save(); this.app.previewCar && this.app.previewCar(); }));
+    const customCar = this.app.custom && this.app.custom.car;
+    if (customCar) right.appendChild(h('div', 'opt', `<span class="lbl">Car</span><b>${esc(customCar.name)}</b>`));
+    else right.appendChild(this.cycle('Body', Object.entries(BODY_STYLES).map(([k, b]) => [k, b.label]), pl.body, (v) => { pl.body = v; this.save(); this.app.previewCar && this.app.previewCar(); }));
     right.appendChild(this.cycle('Paint', PAINTS.map((x, i) => [i, x.name]), pl.color, (v) => { pl.color = v; this.save(); this.app.previewCar && this.app.previewCar(); }));
     const accNames = ['Carbon', 'White', 'Silver', 'Gold', 'Emerald', 'Violet'];
-    right.appendChild(this.cycle('Accent', ACCENTS.map((x, i) => [i, accNames[i]]), pl.accent || 0, (v) => { pl.accent = v; this.save(); this.app.previewCar && this.app.previewCar(); }));
+    if (!customCar) right.appendChild(this.cycle('Accent', ACCENTS.map((x, i) => [i, accNames[i]]), pl.accent || 0, (v) => { pl.accent = v; this.save(); this.app.previewCar && this.app.previewCar(); }));
     grid.append(left, right);
     p.appendChild(grid);
     const row = h('div', 'brow');
@@ -184,6 +186,7 @@ export class Menu {
     b.appendChild(this.toggle('Auto-lower quality if FPS drops', s.autoAdjust, (v) => { s.autoAdjust = v; this.save(); }));
     b.appendChild(this.slider('Render scale', 50, 100, 5, Math.round((s.renderScale || 1) * 100), (v) => `${v}%`, (v) => { s.renderScale = v / 100; this.save(); this.app.applyRenderScale(); }));
     b.appendChild(this.toggle('Show FPS', s.showFps, (v) => { s.showFps = v; this.save(); }));
+    b.appendChild(this.toggle('Show car hitboxes', !!s.showHitbox, (v) => { s.showHitbox = v; this.save(); this.app.view && this.app.view.showHitboxes(v); }));
   }
 
   tab_camera(b) {

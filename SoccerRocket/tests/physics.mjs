@@ -33,6 +33,8 @@ const run = (w, secs, fn) => { const n = Math.round(secs * K.TICK_RATE); for (le
   check('rest height', car.pos.z, 16, 18.5, ' uu');
   check('rest wheel contacts', car.numContacts, 4, 4);
   check('rest speed', car.vel.len(), 0, 1, ' uu/s');
+  // documented Octane-class (Fennec) resting inclination: -0.55 deg (nose down)
+  check('rest inclination', Math.asin(car.forward.z) * 180 / Math.PI, -0.75, -0.4, ' deg');
 }
 
 // 2. Throttle-only top speed and acceleration
