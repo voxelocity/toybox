@@ -49,6 +49,9 @@ export class Input {
   constructor(settings, canvas) {
     this.settings = migrateControls(settings);
     this.keys = new Set();
+    // Keys and buttons pressed since the last poll. A tap shorter than one frame
+    // (a quick jump tap for a flip, at a low frame rate) still counts once.
+    this.tapped = new Set();
     this.prevActions = {};
     this.actions = {};
     this.controls = { throttle: 0, steer: 0, pitch: 0, yaw: 0, roll: 0, jump: false, boost: false, handbrake: false };
@@ -66,6 +69,7 @@ export class Input {
     const down = (code, e) => {
       if (this.rebindCallback) { e && e.preventDefault(); const cb = this.rebindCallback; this.rebindCallback = null; cb(code); return; }
       this.keys.add(code);
+      this.tapped.add(code);
       this.lastDevice = 'keyboard';
     };
     window.addEventListener('keydown', (e) => {
@@ -80,7 +84,7 @@ export class Input {
       down(e.code, e);
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.code));
-    window.addEventListener('blur', () => this.keys.clear());
+    window.addEventListener('blur', () => { this.keys.clear(); this.tapped.clear(); });
     canvas.addEventListener('mousedown', (e) => { down('Mouse' + e.button, e); });
     window.addEventListener('mouseup', (e) => {
       this.keys.delete('Mouse' + e.button);
@@ -116,7 +120,7 @@ export class Input {
 
   bound(action) {
     const b = this.settings.bindings[action] || [];
-    for (const c of b) if (this.keys.has(c)) return true;
+    for (const c of b) if (this.keys.has(c) || this.tapped.has(c)) return true;
     return false;
   }
 
@@ -210,6 +214,7 @@ export class Input {
     for (const k of Object.keys(a)) this.pressed[k] = a[k] && !this.prevActions[k];
     this.actions = a;
     this.prevActions = a;
+    this.tapped.clear();
   }
 
   rumble(strong, weak, ms) {

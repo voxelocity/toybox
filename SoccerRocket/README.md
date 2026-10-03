@@ -93,28 +93,40 @@ physics hitbox and wheels drawn over the car.
 ## Physics
 
 Units are Unreal units (1 uu = 1 cm), the simulation runs at 120 Hz, and z points up. The
-model follows the published RocketSim / RLBot research. `npm test` checks it against
-documented values:
+physics is a JavaScript port of [RocketSim](https://github.com/ZealanL/RocketSim), the
+open-source re-implementation of Rocket League's physics, and of the parts of the Bullet
+engine it relies on:
+
+- **Tick order:** each tick runs in RocketSim's order.
+- **Contacts:** speculative contacts are solved together in a sequential-impulse solver
+  with split impulse.
+- **Collision shapes:** the car is a box against the arena's triangles, against other
+  cars and against the ball.
+- **Car:** btVehicleRL suspension, tyres and sticky force, plus RocketSim's jump, flip,
+  air control, auto-flip, auto-roll, boost, bump and demolition rules.
+
+`tools/rocketsim` runs 58 scripted scenarios through both RocketSim and this game and
+compares them tick by tick. 336 of 338 metrics match; most positions agree to within
+0.01 uu. `npm test` checks documented values:
 
 | | value |
 |---|---|
-| Hitbox (Octane class, used by the Fennec) | 118.0074 × 84.1994 × 36.1591, offset (13.8757, 0, 20.7553) |
-| Wheels front / back | radius 12.5 / 15, rest 38.755 / 37.055, ray reach rest + radius − 2.5 |
-| Suspension | stiffness 500, damping 25 / 40, force scale 35.75 / 54.265 |
-| Rest | z ≈ 17, about 0.6° nose down |
+| Hitbox (Octane class, used by the Fennec) | 120.507 × 86.6994 × 38.6591, offset (13.8757, 0, 20.755) (RocketSim's Octane box) |
+| Wheels front / back | radius 12.5 / 15, rest 38.755 / 37.055, suspension travel ±12 |
+| Suspension | stiffness 500, damping 25 / 40, force scale 35.75 / 54.265, bump-stop pushback |
+| Rest | z ≈ 17.03, about 0.6° nose down |
 | Throttle | 1600 uu/s² at 0 falling to 0 at 1410 uu/s; brake 3500, coast 525 |
 | Boost | +991.7 uu/s² ground, 1058.3 air, 33.3 per second, max speed 2300 |
-| Jump | 291.7 instant + 1458.3 uu/s² for up to 0.2 s (~235 uu full jump, ~475 double) |
+| Jump | 291.7 instant + 1458.3 uu/s² for up to 0.2 s (full jump apex z ≈ 232, double ≈ 462) |
 | Dodge | 500 uu/s impulse (speed-scaled side/back), 0.65 s torque, z-damping, flip cancels |
 | Air control | torque (pitch 130, yaw 95, roll 400) × 0.0959, damping 30/20/50, max 5.5 rad/s |
 | Turning | RocketSim's steer angle curve and tyre model (btVehicleRL): steady curvature 0.00396 @500 … 0.00090 @2200 |
-| Ball | r 91.25, mass 1/6 car, restitution 0.6, friction 0.35, drag 3%/s, max 6000 uu/s |
-| Hits | rigid impulse plus the extra "hit" impulse curve (0.65 → 0.30) |
-| Demos & bumps | supersonic (≥2200) front-bumper hits demolish; bump velocity curves for others |
+| Ball | r 91.25, mass 30 (car 180), restitution 0.6, friction 0.35, drag 3%/s, max 6000 uu/s |
+| Hits | solver contact plus the extra "hit" impulse curve (0.65 → 0.30), every other tick at most |
+| Demos & bumps | supersonic front-bumper hits demolish; bump velocity curves for others |
 
-The arena is the standard 8192 × 10240 × 2044 field with 45° corners, 256 uu curved
-transitions and 1786 × 642.8 × 880 goals. The same geometry drives both collisions and
-rendering.
+The arena is the standard 8192 × 10240 field with 45° corners, 256 uu curved transitions
+and 1786 × 642.8 × 880 goals. The same geometry drives both collisions and rendering.
 
 ## Controls
 
@@ -134,6 +146,23 @@ deadzone and deadzone shape, dodge deadzone and steering / aerial sensitivity
 (Rocket League's defaults: 0.10, Cross, 0.50, 1.00 / 1.00) are in Settings › Controls.
 Bindings saved by an older version that were still on the old defaults
 (Space jump, Shift boost, Ctrl powerslide, F ball cam) move to these.
+
+## Camera
+
+The camera follows Rocket League's car cam and ball cam:
+- **Car cam:** follows the car on the floor and walls, stays upright on walls and the
+  ceiling, and follows your direction of travel in the air.
+- **Ball cam:** keeps the ball and your car in frame. Switching between the two cams
+  blends at the Transition Speed.
+- **Swivel:** the right stick looks around.
+
+Settings › Camera has Rocket League's settings and ranges, with presets:
+- **Default:** FOV 90, Distance 270, Height 100, Angle −3, Stiffness 0.5, Swivel 2.5,
+  Transition 1.0.
+- **Wide:** FOV 110 and similar.
+
+FOV is horizontal at 16:9, as in Rocket League. Camera settings saved by an older version
+are kept and shown as *Custom*.
 
 ## Graphics
 
@@ -171,4 +200,4 @@ node tools/shot.mjs out.png "?q=high" 1280 720 4000 "app.startFreeplay()"
 node tools/vendor-three.mjs    # refresh public/vendor/three
 ```
 
-Credits: three.js (MIT). Sky HDRI "Kloofendal 48d Partly Cloudy (Pure Sky)" from Poly Haven (CC0).
+Credits: physics ported from RocketSim (MIT, © 2022 ZealanL) and Bullet Physics (zlib). three.js (MIT). Sky HDRI "Kloofendal 48d Partly Cloudy (Pure Sky)" from Poly Haven (CC0).
