@@ -84,8 +84,9 @@ export function runScenarioJS(sc) {
     ball.vel.set(...v3(sc.ball.vel, [0, 0, 0]));
     ball.angVel.set(...v3(sc.ball.angVel, [0, 0, 0]));
   } else {
+    // Parked like rs_oracle: zero velocity, so it sleeps (RocketSim Arena::Step)
     ball.reset(...PARKED_BALL_POS);
-    ball.frozen = true;
+    ball.frozen = false;
   }
 
   const cars = [];

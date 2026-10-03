@@ -1,9 +1,17 @@
-// Ball rigid body: a solid sphere with drag, Coulomb friction against the
-// arena (which yields the characteristic spin-on-bounce) and restitution.
-import { V3, Quat } from './math.js';
+// Ball rigid body: a solid sphere (btSphereShape, I = 2/5 m r^2) with linear
+// drag. Its contacts with the arena are "special" RocketSim contacts that the
+// solver merges into one averaged contact (solver.js), which gives the game's
+// bounces (restitution 0.6, friction 0.35 against the arena).
+//
+// World drives it in RocketSim's order: the ball sleeps (no gravity, no
+// integration) while its velocity and spin are exactly zero, e.g. on the
+// kickoff spot, until a car touches it; drag is applied before collision
+// detection; the extra car-hit impulse arrives through velocityImpulseCache
+// and finishPhysicsTick() adds it, then clamps once.
+import { V3, Quat, M3 } from './math.js';
 import * as K from './constants.js';
-
-const _r = new V3(), _v = new V3(), _t = new V3(), _a = new V3();
+import { Narrowphase } from './contacts.js';
+import { Solver } from './solver.js';
 
 export class Ball {
   constructor() {
@@ -11,21 +19,33 @@ export class Ball {
     this.mass = K.BALL_MASS;
     this.invMass = 1 / this.mass;
     this.invInertia = 1 / (0.4 * this.mass * this.radius * this.radius);
+    this.invInertiaLocal = new V3(this.invInertia, this.invInertia, this.invInertia);
+    this.friction = K.BALL_FRICTION;
+    this.restitution = K.BALL_RESTITUTION;
     this.pos = new V3(0, 0, K.BALL_REST_Z);
     this.vel = new V3();
     this.angVel = new V3();
     this.quat = new Quat();
+    this.R = new M3();
+    this.extForce = new V3();
+    this.extTorque = new V3();
+    this.velocityImpulseCache = new V3();
+    this.sb = null;
     this.lastImpact = 0;
     this.lastNormal = new V3(0, 0, 1);
-    this.frozen = false;
+    this.frozen = false;   // game-level freeze (countdown, after goals): not simulated at all
+    this.sleeping = false; // RocketSim zero-velocity sleep (set by World each tick)
   }
 
   reset(x = 0, y = 0, z = K.BALL_REST_Z) {
     this.pos.set(x, y, z); this.vel.set(0, 0, 0); this.angVel.set(0, 0, 0);
+    this.velocityImpulseCache.set(0, 0, 0);
   }
 
   copyFrom(b) {
-    this.pos.copy(b.pos); this.vel.copy(b.vel); this.angVel.copy(b.angVel);
+    this.pos.copy(b.pos); this.vel.copy(b.vel); this.angVel.copy(b.angVel); this.quat.copy(b.quat);
+    this.R.fromQuat(this.quat);
+    this.frozen = b.frozen;
     return this;
   }
 
@@ -34,85 +54,65 @@ export class Ball {
     return out.set(this.vel.x + w.y * rz - w.z * ry, this.vel.y + w.z * rx - w.x * rz, this.vel.z + w.x * ry - w.y * rx);
   }
 
-  applyImpulseAt(jx, jy, jz, rx, ry, rz) {
-    this.vel.x += jx * this.invMass; this.vel.y += jy * this.invMass; this.vel.z += jz * this.invMass;
-    const k = this.invInertia;
-    this.angVel.x += (ry * jz - rz * jy) * k;
-    this.angVel.y += (rz * jx - rx * jz) * k;
-    this.angVel.z += (rx * jy - ry * jx) * k;
-  }
-
-  preStep(dt) {
-    if (this.frozen) return;
-    this.vel.z += K.GRAVITY_Z * dt;
+  /** btRigidBody::applyDamping (linear only; v *= (1 - drag)^dt). */
+  applyDamping(dt) {
     this.vel.scale(Math.pow(1 - K.BALL_DRAG, dt));
   }
 
-  integrate(dt) {
-    if (this.frozen) return;
+  /** Ball::_FinishPhysicsTick: add the velocity cache (car hits), then clamp once. */
+  finishPhysicsTick() {
+    const c = this.velocityImpulseCache;
+    if (c.x !== 0 || c.y !== 0 || c.z !== 0) { this.vel.add(c); c.set(0, 0, 0); }
     this.vel.clampLength(K.BALL_MAX_SPEED);
     this.angVel.clampLength(K.BALL_MAX_ANG_SPEED);
-    this.pos.addScaled(this.vel, dt);
-    this.quat.integrate(this.angVel, dt);
   }
+}
 
-  /**
-   * Resolve contact with the arena. Returns the largest approach speed of a
-   * new impact this tick (0 when resting / no contact).
-   */
-  collideWorld(mesh) {
-    if (this.frozen) return 0;
-    const n = mesh.sphere(this.pos.x, this.pos.y, this.pos.z, this.radius);
-    let impact = 0;
-    const R = this.radius, m = this.mass;
-    for (let i = 0; i < n; i++) {
-      const c = mesh.contacts[i];
-      const nx = c.nx, ny = c.ny, nz = c.nz;
-      // push out
-      this.pos.x += nx * c.depth; this.pos.y += ny * c.depth; this.pos.z += nz * c.depth;
-      _r.set(-nx * R, -ny * R, -nz * R);
-      this.velAt(_r.x, _r.y, _r.z, _v);
-      const vn = _v.x * nx + _v.y * ny + _v.z * nz;
-      if (vn >= 0) continue;
-      const e = -vn > 10 ? K.BALL_RESTITUTION : 0;
-      const jn = -(1 + e) * vn * m;
-      this.vel.x += nx * jn / m; this.vel.y += ny * jn / m; this.vel.z += nz * jn / m;
-      if (-vn > impact) { impact = -vn; this.lastNormal.set(nx, ny, nz); }
-      // friction at the contact point
-      this.velAt(_r.x, _r.y, _r.z, _v);
-      const vn2 = _v.x * nx + _v.y * ny + _v.z * nz;
-      _t.set(_v.x - nx * vn2, _v.y - ny * vn2, _v.z - nz * vn2);
-      const vt = _t.len();
-      if (vt > 1e-6) {
-        _t.scale(1 / vt);
-        const kT = 1 / m + R * R * this.invInertia; // r is parallel to n
-        const jt = Math.min(vt / kT, K.BALL_FRICTION * jn);
-        this.applyImpulseAt(-_t.x * jt, -_t.y * jt, -_t.z * jt, _r.x, _r.y, _r.z);
-      }
-    }
-    this.lastImpact = impact;
-    return impact;
+// ---------------------------------------------------------------------------
+// Ball-only simulation for prediction (bots, shot detection): the same tick as
+// World.step without cars.
+// ---------------------------------------------------------------------------
+const _ballOnlyListener = { onBallWorld(pt) { pt.special = true; }, onCarWorld() {}, onCarBall() {}, onCarCar() {} };
+const _pred = { np: null, mesh: null, solver: new Solver(), ball: new Ball() };
+
+/** One RocketSim tick of a lone ball against the arena. */
+export function stepBallAlone(ball, np, solver, dt) {
+  if (ball.frozen) return;
+  if (ball.vel.x === 0 && ball.vel.y === 0 && ball.vel.z === 0 && ball.angVel.x === 0 && ball.angVel.y === 0 && ball.angVel.z === 0) return; // asleep
+  ball.extForce.set(0, 0, K.GRAVITY_Z);
+  ball.applyDamping(dt);
+  np.begin();
+  np.ballWorld(ball);
+  solver.begin(dt);
+  solver.addBody(ball);
+  for (let i = 0; i < np.nManifolds; i++) {
+    const m = np.manifolds[i];
+    for (let k = 0; k < m.n; k++) solver.addContact(m.pts[k]);
   }
+  solver.solve();
+  solver.finish();
+  ball.finishPhysicsTick();
 }
 
 /**
  * Predicts the ball trajectory (ignoring cars). Writes into `out`, an array of
  * { t, x, y, z, vx, vy, vz } slots, reusing them. Returns the slot count used.
  */
-const _pb = new Ball();
 export function predictBall(ball, mesh, seconds, step, out) {
-  _pb.copyFrom(ball);
+  const P = _pred;
+  if (P.mesh !== mesh) { P.mesh = mesh; P.np = new Narrowphase(mesh, _ballOnlyListener); }
+  const b = P.ball.copyFrom(ball);
+  b.frozen = false;
   const sub = Math.max(1, Math.round(step * K.TICK_RATE));
   const n = Math.floor(seconds / step);
   for (let i = 0; i < n; i++) {
-    for (let s = 0; s < sub; s++) {
-      _pb.preStep(K.DT); _pb.integrate(K.DT); _pb.collideWorld(mesh);
-    }
+    for (let s = 0; s < sub; s++) stepBallAlone(b, P.np, P.solver, K.DT);
     let o = out[i];
     if (!o) o = out[i] = { t: 0, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0 };
     o.t = (i + 1) * sub * K.DT;
-    o.x = _pb.pos.x; o.y = _pb.pos.y; o.z = _pb.pos.z;
-    o.vx = _pb.vel.x; o.vy = _pb.vel.y; o.vz = _pb.vel.z;
+    o.x = b.pos.x; o.y = b.pos.y; o.z = b.pos.z;
+    o.vx = b.vel.x; o.vy = b.vel.y; o.vz = b.vel.z;
   }
   return n;
 }
+

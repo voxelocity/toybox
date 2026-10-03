@@ -206,29 +206,76 @@ export function buildArenaSurfaces(opts = {}) {
 
 // ---------------------------------------------------------------------------
 // Collision mesh with a uniform grid broadphase.
+//
+// The simulated world matches RocketSim's SOCCAR setup: arena triangles plus
+// infinite planes for the floor (z=0), the ceiling (z=2048) and the side walls
+// (x=+-4096) (Arena.cpp _SetupArenaCollisionShapes; the planes live in
+// contacts.js). The flat floor / goal floor and the flat side-wall triangles
+// are therefore left out of the triangle mesh, exactly as
+// tools/rocketsim/export-cmf.mjs does for the RocketSim oracle, so both engines
+// collide with identical geometry. Our ceiling triangles (z=2044) stay, in
+// front of the 2048 plane.
+//
+// Per-triangle internal-edge info (btGenerateInternalEdgeInfo, Bullet, zlib)
+// lets contacts.js correct contact normals at shared edges like RocketSim.
 // ---------------------------------------------------------------------------
+const EDGE_EPS = 0.01;
+/** Triangle filter shared with export-cmf.mjs: true = covered by a plane. */
+export function isPlaneCoveredTriangle(tag, v) {
+  if (tag === 'floor' || tag === 'goalfloor') return true;
+  for (let sx = -1; sx <= 1; sx += 2) {
+    if (Math.abs(v[0] - sx * X) < EDGE_EPS && Math.abs(v[3] - sx * X) < EDGE_EPS && Math.abs(v[6] - sx * X) < EDGE_EPS) return true;
+  }
+  return Math.abs(v[2]) < EDGE_EPS && Math.abs(v[5]) < EDGE_EPS && Math.abs(v[8]) < EDGE_EPS;
+}
+
+// btTriangleInfo flags (edge slots 0 = V0V1, 1 = V1V2, 2 = V2V0)
+export const TRI_V0V1_CONVEX = 1, TRI_V1V2_CONVEX = 2, TRI_V2V0_CONVEX = 4;
+export const TRI_V0V1_SWAP = 8, TRI_V1V2_SWAP = 16, TRI_V2V0_SWAP = 32;
+export const NO_EDGE = 2 * Math.PI; // angle of an edge without a neighbour
+
 export class CollisionMesh {
-  constructor(surfaces, cell = 256) {
-    let nt = 0;
-    for (const s of surfaces) nt += s.indices.length / 3;
-    const T = new Float64Array(nt * 9), N = new Float64Array(nt * 3);
-    let t = 0;
+  /**
+   * surfaces: buildArenaSurfaces() output. opts.filter(tag, v9) -> true drops
+   * a triangle (default: keep all).
+   */
+  constructor(surfaces, cell = 256, opts = {}) {
+    const filter = opts.filter || null;
+    const list = [];
+    const v9 = new Float64Array(9);
+    // Vertices are welded (first occurrence wins, 0.001 uu key) exactly like
+    // export-cmf.mjs, so this mesh and RocketSim's copy are the same numbers.
+    const weld = new Map(), vid = [];
     for (const s of surfaces) {
       const p = s.positions, id = s.indices;
-      for (let i = 0; i < id.length; i += 3, t++) {
+      for (let i = 0; i < id.length; i += 3) {
+        for (let k = 0; k < 3; k++) { const v = id[i + k]; v9[k * 3] = p[v * 3]; v9[k * 3 + 1] = p[v * 3 + 1]; v9[k * 3 + 2] = p[v * 3 + 2]; }
+        if (filter && filter(s.tag, v9)) continue;
         for (let k = 0; k < 3; k++) {
-          const v = id[i + k];
-          T[t * 9 + k * 3] = p[v * 3]; T[t * 9 + k * 3 + 1] = p[v * 3 + 1]; T[t * 9 + k * 3 + 2] = p[v * 3 + 2];
+          const key = `${Math.round(v9[k * 3] * 1000)},${Math.round(v9[k * 3 + 1] * 1000)},${Math.round(v9[k * 3 + 2] * 1000)}`;
+          let w = weld.get(key);
+          if (!w) { w = { id: weld.size, x: v9[k * 3], y: v9[k * 3 + 1], z: v9[k * 3 + 2] }; weld.set(key, w); }
+          list.push(w.x, w.y, w.z);
+          vid.push(w.id);
         }
-        const o = t * 9;
-        const e1x = T[o + 3] - T[o], e1y = T[o + 4] - T[o + 1], e1z = T[o + 5] - T[o + 2];
-        const e2x = T[o + 6] - T[o], e2y = T[o + 7] - T[o + 1], e2z = T[o + 8] - T[o + 2];
-        let nx = e1y * e2z - e1z * e2y, ny = e1z * e2x - e1x * e2z, nz = e1x * e2y - e1y * e2x;
-        const l = Math.hypot(nx, ny, nz) || 1;
-        N[t * 3] = nx / l; N[t * 3 + 1] = ny / l; N[t * 3 + 2] = nz / l;
       }
     }
-    this.tris = T; this.norms = N; this.count = nt;
+    this.triVerts = Int32Array.from(vid); // welded vertex ids, 3 per triangle
+    const nt = list.length / 9;
+    const T = new Float64Array(list), N = new Float64Array(nt * 3), B = new Float64Array(nt * 6);
+    for (let t = 0; t < nt; t++) {
+      const o = t * 9;
+      const e1x = T[o + 3] - T[o], e1y = T[o + 4] - T[o + 1], e1z = T[o + 5] - T[o + 2];
+      const e2x = T[o + 6] - T[o], e2y = T[o + 7] - T[o + 1], e2z = T[o + 8] - T[o + 2];
+      const nx = e1y * e2z - e1z * e2y, ny = e1z * e2x - e1x * e2z, nz = e1x * e2y - e1y * e2x;
+      const l = Math.hypot(nx, ny, nz) || 1;
+      N[t * 3] = nx / l; N[t * 3 + 1] = ny / l; N[t * 3 + 2] = nz / l;
+      for (let a = 0; a < 3; a++) {
+        B[t * 6 + a] = Math.min(T[o + a], T[o + 3 + a], T[o + 6 + a]);
+        B[t * 6 + 3 + a] = Math.max(T[o + a], T[o + 3 + a], T[o + 6 + a]);
+      }
+    }
+    this.tris = T; this.norms = N; this.boxes = B; this.count = nt;
     this.cell = cell;
     this.min = [-X - cell, -(Y + GD) - cell, -cell];
     this.dims = [
@@ -240,11 +287,8 @@ export class CollisionMesh {
     const lists = new Array(ncell);
     const eps = 2;
     for (let i = 0; i < nt; i++) {
-      const o = i * 9;
-      const x0 = Math.min(T[o], T[o + 3], T[o + 6]) - eps, x1 = Math.max(T[o], T[o + 3], T[o + 6]) + eps;
-      const y0 = Math.min(T[o + 1], T[o + 4], T[o + 7]) - eps, y1 = Math.max(T[o + 1], T[o + 4], T[o + 7]) + eps;
-      const z0 = Math.min(T[o + 2], T[o + 5], T[o + 8]) - eps, z1 = Math.max(T[o + 2], T[o + 5], T[o + 8]) + eps;
-      const [ix0, iy0, iz0] = this._cellOf(x0, y0, z0), [ix1, iy1, iz1] = this._cellOf(x1, y1, z1);
+      const [ix0, iy0, iz0] = this._cellOf(B[i * 6] - eps, B[i * 6 + 1] - eps, B[i * 6 + 2] - eps);
+      const [ix1, iy1, iz1] = this._cellOf(B[i * 6 + 3] + eps, B[i * 6 + 4] + eps, B[i * 6 + 5] + eps);
       for (let ix = ix0; ix <= ix1; ix++) for (let iy = iy0; iy <= iy1; iy++) for (let iz = iz0; iz <= iz1; iz++) {
         if (!this._triBoxOverlap(i, ix, iy, iz)) continue;
         const c = (iz * this.dims[1] + iy) * this.dims[0] + ix;
@@ -261,8 +305,167 @@ export class CollisionMesh {
     this.stamp = new Int32Array(nt);
     this.stampId = 0;
     this.cand = new Int32Array(4096);
-    this.contacts = [];
-    for (let i = 0; i < 32; i++) this.contacts.push({ px: 0, py: 0, pz: 0, nx: 0, ny: 0, nz: 0, depth: 0 });
+    this.hits = new Int32Array(4096);
+    this._buildEdgeInfo();
+    this._buildBvhOrder();
+  }
+
+  /**
+   * The order in which RocketSim's btBvhTriangleMeshShape (quantized BVH,
+   * btQuantizedBvh::buildTree + walkStacklessQuantizedTreeCacheFriendly)
+   * reports overlapping triangles. Contacts are added to a <= 4 point manifold
+   * in that order and the replacement rule depends on it, so the narrowphase
+   * visits candidates by triRank. Built in Bullet units with float32 maths
+   * to reproduce the tree exactly.
+   */
+  _buildBvhOrder() {
+    const nt = this.count, T = this.tris, f = Math.fround;
+    const V = new Float32Array(nt * 9);
+    for (let i = 0; i < nt * 9; i++) V[i] = T[i] * (1 / 50); // export-cmf: float32(uu * UU_TO_BT)
+    let mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
+    for (let i = 0; i < nt * 3; i++) for (let a = 0; a < 3; a++) { const v = V[i * 3 + a]; if (v < mn[a]) mn[a] = v; if (v > mx[a]) mx[a] = v; }
+    // setQuantizationValues(min, max, margin 1)
+    const bmin = mn.map((v) => f(v - 1)), bmax = mx.map((v) => f(v + 1));
+    let Q = [0, 1, 2].map((a) => f(65533 / f(bmax[a] - bmin[a])));
+    const quant = (p, isMax, out) => {
+      for (let a = 0; a < 3; a++) {
+        const v = f(f(p[a] - bmin[a]) * Q[a]);
+        out[a] = isMax ? ((Math.trunc(f(v + 1)) & 0xffff) | 1) : (Math.trunc(v) & 0xfffe);
+      }
+      return out;
+    };
+    const unq = (q, a) => f(f(q / Q[a]) + bmin[a]);
+    const qv = [0, 0, 0];
+    quant(bmin, false, qv);
+    for (let a = 0; a < 3; a++) bmin[a] = Math.min(bmin[a], f(unq(qv[a], a) - 1));
+    Q = [0, 1, 2].map((a) => f(65533 / f(bmax[a] - bmin[a])));
+    quant(bmax, true, qv);
+    for (let a = 0; a < 3; a++) bmax[a] = Math.max(bmax[a], f(unq(qv[a], a) + 1));
+    Q = [0, 1, 2].map((a) => f(65533 / f(bmax[a] - bmin[a])));
+    // leaf nodes (QuantizedNodeTriangleCallback)
+    const qmin = new Int32Array(nt * 3), qmax = new Int32Array(nt * 3), tri = new Int32Array(nt);
+    const lo = [0, 0, 0], hi = [0, 0, 0], q = [0, 0, 0];
+    for (let t = 0; t < nt; t++) {
+      for (let a = 0; a < 3; a++) {
+        lo[a] = Math.min(V[t * 9 + a], V[t * 9 + 3 + a], V[t * 9 + 6 + a]);
+        hi[a] = Math.max(V[t * 9 + a], V[t * 9 + 3 + a], V[t * 9 + 6 + a]);
+        if (f(hi[a] - lo[a]) < f(0.002)) { hi[a] = f(hi[a] + f(0.001)); lo[a] = f(lo[a] - f(0.001)); }
+      }
+      quant(lo, false, q); qmin[t * 3] = q[0]; qmin[t * 3 + 1] = q[1]; qmin[t * 3 + 2] = q[2];
+      quant(hi, true, q); qmax[t * 3] = q[0]; qmax[t * 3 + 1] = q[1]; qmax[t * 3 + 2] = q[2];
+      tri[t] = t;
+    }
+    const center = (i, a) => f(f(0.5) * f(unq(qmax[i * 3 + a], a) + unq(qmin[i * 3 + a], a)));
+    const swap = (i, j) => {
+      for (let a = 0; a < 3; a++) {
+        let x = qmin[i * 3 + a]; qmin[i * 3 + a] = qmin[j * 3 + a]; qmin[j * 3 + a] = x;
+        x = qmax[i * 3 + a]; qmax[i * 3 + a] = qmax[j * 3 + a]; qmax[j * 3 + a] = x;
+      }
+      const x = tri[i]; tri[i] = tri[j]; tri[j] = x;
+    };
+    const means = (s, e) => {
+      const m = [0, 0, 0];
+      for (let i = s; i < e; i++) for (let a = 0; a < 3; a++) m[a] = f(m[a] + center(i, a));
+      const k = f(1 / (e - s));
+      for (let a = 0; a < 3; a++) m[a] = f(m[a] * k);
+      return m;
+    };
+    const nodeLeaf = new Int32Array(2 * nt).fill(-1), nodeEscape = new Int32Array(2 * nt);
+    const headers = [];
+    let cur = 0;
+    const MAX_NODES = 2048 / 16; // MAX_SUBTREE_SIZE_IN_BYTES / sizeof(btQuantizedBvhNode)
+    const sizeOf = (n) => (nodeLeaf[n] >= 0 ? 1 : nodeEscape[n]);
+    const build = (s, e) => {
+      const num = e - s, curIndex = cur;
+      if (num === 1) { nodeLeaf[cur] = tri[s]; cur++; return; }
+      // calcSplittingAxis (variance of AABB centres)
+      const m = means(s, e), vr = [0, 0, 0];
+      for (let i = s; i < e; i++) for (let a = 0; a < 3; a++) { const d = f(center(i, a) - m[a]); vr[a] = f(vr[a] + f(d * d)); }
+      const kv = f(1 / f(num - 1));
+      for (let a = 0; a < 3; a++) vr[a] = f(vr[a] * kv);
+      const axis = vr[0] < vr[1] ? (vr[1] < vr[2] ? 2 : 1) : (vr[0] < vr[2] ? 2 : 0);
+      // sortAndCalcSplittingIndex
+      const sv = means(s, e)[axis];
+      let split = s;
+      for (let i = s; i < e; i++) if (center(i, axis) > sv) { swap(i, split); split++; }
+      const bal = (num / 3) | 0;
+      if (split <= s + bal || split >= e - 1 - bal) split = s + (num >> 1);
+      const node = cur; cur++;
+      const left = cur; build(s, split);
+      const right = cur; build(split, e);
+      const esc = cur - curIndex;
+      if (esc > MAX_NODES) { // updateSubtreeHeaders
+        if (sizeOf(left) <= MAX_NODES) headers.push([left, sizeOf(left)]);
+        if (sizeOf(right) <= MAX_NODES) headers.push([right, sizeOf(right)]);
+      }
+      nodeEscape[node] = esc;
+    };
+    build(0, nt);
+    if (!headers.length) headers.push([0, sizeOf(0)]);
+    const rank = new Int32Array(nt);
+    let r = 0;
+    for (const [root, size] of headers) for (let n = root; n < root + size; n++) if (nodeLeaf[n] >= 0) rank[nodeLeaf[n]] = r++;
+    this.triRank = rank;
+  }
+
+  /**
+   * btGenerateInternalEdgeInfo / btConnectivityProcessor: for every edge shared
+   * with another triangle store the corrected angle and the convexity flags.
+   * edgeAngle[t * 3 + slot], slot 0 = V0V1, 1 = V1V2, 2 = V2V0; NO_EDGE if unshared.
+   */
+  _buildEdgeInfo() {
+    const nt = this.count, T = this.tris;
+    const angle = new Float64Array(nt * 3).fill(NO_EDGE), flags = new Uint8Array(nt);
+    const tv = this.triVerts; // welded vertex ids (Bullet compares positions, 1e-4 bt)
+    const byVert = new Map();
+    for (let t = 0; t < nt; t++) for (let k = 0; k < 3; k++) {
+      const id = tv[t * 3 + k];
+      let l = byVert.get(id);
+      if (!l) byVert.set(id, l = []);
+      if (l[l.length - 1] !== t) l.push(t);
+    }
+    const P = (t, k) => [T[t * 9 + k * 3], T[t * 9 + k * 3 + 1], T[t * 9 + k * 3 + 2]];
+    const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+    const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+    const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    const norm = (a) => { const l = Math.hypot(a[0], a[1], a[2]); return l > 0 ? [a[0] / l, a[1] / l, a[2] / l] : [0, 0, 0]; };
+    const triNormal = (p0, p1, p2) => norm(cross(sub(p1, p0), sub(p2, p0)));
+    for (let ta = 0; ta < nt; ta++) {
+      const A = [P(ta, 0), P(ta, 1), P(ta, 2)];
+      const cand = new Set();
+      for (let k = 0; k < 3; k++) for (const t of byVert.get(tv[ta * 3 + k])) if (t !== ta) cand.add(t);
+      for (const tb of [...cand].sort((a, b) => a - b)) {
+        const Bv = [P(tb, 0), P(tb, 1), P(tb, 2)];
+        const sA = [], sB = [];
+        for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) if (tv[ta * 3 + i] === tv[tb * 3 + j]) { sA.push(i); sB.push(j); }
+        if (sA.length !== 2) continue;
+        if (sA[0] === 0 && sA[1] === 2) { sA[0] = 2; sA[1] = 0; const tmp = sB[1]; sB[1] = sB[0]; sB[0] = tmp; }
+        const sumA = sA[0] + sA[1], otherA = 3 - sumA, otherB = 3 - (sB[0] + sB[1]);
+        const edge = norm(sub(A[sA[1]], A[sA[0]]));
+        const nA = triNormal(A[0], A[1], A[2]);
+        const nB = triNormal(Bv[sB[1]], Bv[sB[0]], Bv[otherB]);
+        let ecA = norm(cross(edge, nA));
+        if (dot(ecA, sub(A[otherA], A[sA[0]])) < 0) ecA = [-ecA[0], -ecA[1], -ecA[2]];
+        let ecB = norm(cross(edge, nB));
+        if (dot(ecB, sub(Bv[otherB], Bv[sB[0]])) < 0) ecB = [-ecB[0], -ecB[1], -ecB[2]];
+        const calc = cross(ecA, ecB);
+        let corrected = 0, convex = false;
+        if (dot(calc, calc) >= 0.0001) { // m_planarEpsilon
+          const calcNA = norm(cross(norm(calc), ecA));
+          const angle2 = Math.atan2(dot(ecB, calcNA), dot(ecB, ecA));
+          convex = dot(nA, ecB) < 0;
+          corrected = convex ? Math.PI - angle2 : -(Math.PI - angle2);
+        }
+        // edge slot and rotation axis as in the switch on sumvertsA
+        const slot = sumA === 1 ? 0 : sumA === 3 ? 1 : 2;
+        const ax = slot === 0 ? sub(A[0], A[1]) : slot === 1 ? sub(A[1], A[2]) : sub(A[2], A[0]);
+        if (dot(rotateAxisAngle(ax, -corrected, nA), nB) < 0) flags[ta] |= (8 << slot);
+        angle[ta * 3 + slot] = -corrected;
+        if (convex) flags[ta] |= (1 << slot);
+      }
+    }
+    this.edgeAngle = angle;
+    this.edgeFlags = flags;
   }
 
   _cellOf(x, y, z) {
@@ -300,16 +503,20 @@ export class CollisionMesh {
     return true;
   }
 
-  // Collect unique triangle candidates overlapping an AABB.
+  /**
+   * Collects unique triangles whose grid cells overlap an AABB into this.cand
+   * (allocation-free) and returns the count. Exact tests are up to the caller.
+   */
   gather(x0, y0, z0, x1, y1, z1) {
     const c = this.cell, d = this.dims, m = this.min;
     const ix0 = Math.max(0, Math.floor((x0 - m[0]) / c)), ix1 = Math.min(d[0] - 1, Math.floor((x1 - m[0]) / c));
     const iy0 = Math.max(0, Math.floor((y0 - m[1]) / c)), iy1 = Math.min(d[1] - 1, Math.floor((y1 - m[1]) / c));
     const iz0 = Math.max(0, Math.floor((z0 - m[2]) / c)), iz1 = Math.min(d[2] - 1, Math.floor((z1 - m[2]) / c));
-    const id = ++this.stampId;
+    if (++this.stampId > 0x3fffffff) { this.stampId = 1; this.stamp.fill(0); }
+    const id = this.stampId;
     let n = 0;
     for (let iz = iz0; iz <= iz1; iz++) for (let iy = iy0; iy <= iy1; iy++) {
-      let base = (iz * d[1] + iy) * d[0];
+      const base = (iz * d[1] + iy) * d[0];
       for (let ix = ix0; ix <= ix1; ix++) {
         const ci = base + ix;
         for (let k = this.cellStart[ci], e = this.cellStart[ci + 1]; k < e; k++) {
@@ -325,53 +532,38 @@ export class CollisionMesh {
   }
 
   /**
-   * Sphere vs mesh. Returns number of contacts written to this.contacts (a
-   * reduced manifold: near-parallel normals are merged keeping the deepest).
-   * Contact: point on surface (px..), normal into the arena (nx..), depth.
+   * Triangles whose AABB overlaps the box, in RocketSim's BVH report order
+   * (triRank), into this.hits. Returns the count. Allocation-free.
    */
-  sphere(cx, cy, cz, r, candCount = -1) {
-    const n = candCount >= 0 ? candCount : this.gather(cx - r, cy - r, cz - r, cx + r, cy + r, cz + r);
-    const T = this.tris, N = this.norms, cand = this.cand;
-    let nc = 0;
-    const out = this.contacts;
-    const r2 = r * r;
+  overlapping(x0, y0, z0, x1, y1, z1) {
+    const n = this.gather(x0, y0, z0, x1, y1, z1), cand = this.cand, rank = this.triRank;
+    if (this.hits.length < n) this.hits = new Int32Array(this.cand.length);
+    const out = this.hits;
+    let m = 0;
     for (let k = 0; k < n; k++) {
-      const t = cand[k], o = t * 9;
-      const tnx = N[t * 3], tny = N[t * 3 + 1], tnz = N[t * 3 + 2];
-      // early plane rejection
-      const pd = (cx - T[o]) * tnx + (cy - T[o + 1]) * tny + (cz - T[o + 2]) * tnz;
-      if (pd > r || pd < -r * 2) continue;
-      closestPtTri(cx, cy, cz, T, o, _cp);
-      const dx = cx - _cp[0], dy = cy - _cp[1], dz = cz - _cp[2];
-      const d2 = dx * dx + dy * dy + dz * dz;
-      if (d2 >= r2 && pd >= 0) continue;
-      let nx, ny, nz, depth;
-      if (pd < 0) { // centre behind the surface: push out along face normal
-        nx = tnx; ny = tny; nz = tnz; depth = r - pd;
-        if (d2 > r2 * 4) continue;
-      } else {
-        const d = Math.sqrt(d2);
-        if (d < 1e-6) { nx = tnx; ny = tny; nz = tnz; } else { nx = dx / d; ny = dy / d; nz = dz / d; }
-        depth = r - d;
-      }
-      // merge with an existing contact of similar normal
-      let merged = false;
-      for (let j = 0; j < nc; j++) {
-        const c = out[j];
-        if (c.nx * nx + c.ny * ny + c.nz * nz > 0.985) {
-          if (depth > c.depth) { c.px = _cp[0]; c.py = _cp[1]; c.pz = _cp[2]; c.nx = nx; c.ny = ny; c.nz = nz; c.depth = depth; }
-          merged = true; break;
-        }
-      }
-      if (merged || nc >= out.length) continue;
-      const c = out[nc++];
-      c.px = _cp[0]; c.py = _cp[1]; c.pz = _cp[2]; c.nx = nx; c.ny = ny; c.nz = nz; c.depth = depth;
+      const t = cand[k];
+      if (!this.triOverlapsAabb(t, x0, y0, z0, x1, y1, z1)) continue;
+      // insertion sort by rank (few candidates)
+      const r = rank[t];
+      let j = m++;
+      while (j > 0 && rank[out[j - 1]] > r) { out[j] = out[j - 1]; j--; }
+      out[j] = t;
     }
-    return nc;
+    return m;
   }
 
-  /** Ray cast against front faces. hit = { t, nx, ny, nz }. Returns bool. */
-  raycast(ox, oy, oz, dx, dy, dz, maxT, hit) {
+  /** TestTriangleAgainstAabb2: triangle t's AABB overlaps [x0,x1]x[y0,y1]x[z0,z1]. */
+  triOverlapsAabb(t, x0, y0, z0, x1, y1, z1) {
+    const B = this.boxes, o = t * 6;
+    return B[o] <= x1 && B[o + 3] >= x0 && B[o + 1] <= y1 && B[o + 4] >= y0 && B[o + 2] <= z1 && B[o + 5] >= z0;
+  }
+
+  /**
+   * Ray cast against the triangles. Like Bullet's btTriangleRaycastCallback
+   * without kF_FilterBackfaces, both sides are hit and the normal faces the ray
+   * origin (twoSided = false skips back faces). hit = { t, nx, ny, nz, tri }.
+   */
+  raycast(ox, oy, oz, dx, dy, dz, maxT, hit, twoSided = true) {
     const ex = ox + dx * maxT, ey = oy + dy * maxT, ez = oz + dz * maxT;
     const n = this.gather(Math.min(ox, ex) - 1, Math.min(oy, ey) - 1, Math.min(oz, ez) - 1, Math.max(ox, ex) + 1, Math.max(oy, ey) + 1, Math.max(oz, ez) + 1);
     const T = this.tris, N = this.norms;
@@ -380,7 +572,7 @@ export class CollisionMesh {
       const t = this.cand[k], o = t * 9;
       const nx = N[t * 3], ny = N[t * 3 + 1], nz = N[t * 3 + 2];
       const dn = dx * nx + dy * ny + dz * nz;
-      if (dn >= -1e-9) continue; // back-face or parallel
+      if (dn >= -1e-9 && (!twoSided || dn <= 1e-9)) continue; // parallel, or back face
       const e1x = T[o + 3] - T[o], e1y = T[o + 4] - T[o + 1], e1z = T[o + 5] - T[o + 2];
       const e2x = T[o + 6] - T[o], e2y = T[o + 7] - T[o + 1], e2z = T[o + 8] - T[o + 2];
       const px = dy * e2z - dz * e2y, py = dz * e2x - dx * e2z, pz = dx * e2y - dy * e2x;
@@ -394,54 +586,33 @@ export class CollisionMesh {
       const v = (dx * qx + dy * qy + dz * qz) * inv;
       if (v < -1e-6 || u + v > 1 + 1e-6) continue;
       const tt = (e2x * qx + e2y * qy + e2z * qz) * inv;
-      if (tt < -1e-3 || tt >= best) continue;
+      if (tt < 0 || tt >= best) continue;
       best = tt; found = true;
-      hit.nx = nx; hit.ny = ny; hit.nz = nz;
+      const s = dn < 0 ? 1 : -1;
+      hit.nx = nx * s; hit.ny = ny * s; hit.nz = nz * s; hit.tri = t;
     }
-    if (found) hit.t = Math.max(0, best);
+    if (found) hit.t = best;
     return found;
   }
 }
 
-const _cp = [0, 0, 0];
-// Ericson, Real-Time Collision Detection 5.1.5
-function closestPtTri(px, py, pz, T, o, out) {
-  const ax = T[o], ay = T[o + 1], az = T[o + 2];
-  const bx = T[o + 3], by = T[o + 4], bz = T[o + 5];
-  const cx = T[o + 6], cy = T[o + 7], cz = T[o + 8];
-  const abx = bx - ax, aby = by - ay, abz = bz - az;
-  const acx = cx - ax, acy = cy - ay, acz = cz - az;
-  const apx = px - ax, apy = py - ay, apz = pz - az;
-  const d1 = abx * apx + aby * apy + abz * apz, d2 = acx * apx + acy * apy + acz * apz;
-  if (d1 <= 0 && d2 <= 0) { out[0] = ax; out[1] = ay; out[2] = az; return; }
-  const bpx = px - bx, bpy = py - by, bpz = pz - bz;
-  const d3 = abx * bpx + aby * bpy + abz * bpz, d4 = acx * bpx + acy * bpy + acz * bpz;
-  if (d3 >= 0 && d4 <= d3) { out[0] = bx; out[1] = by; out[2] = bz; return; }
-  const vc = d1 * d4 - d3 * d2;
-  if (vc <= 0 && d1 >= 0 && d3 <= 0) {
-    const v = d1 / (d1 - d3);
-    out[0] = ax + abx * v; out[1] = ay + aby * v; out[2] = az + abz * v; return;
-  }
-  const cpx = px - cx, cpy = py - cy, cpz = pz - cz;
-  const d5 = abx * cpx + aby * cpy + abz * cpz, d6 = acx * cpx + acy * cpy + acz * cpz;
-  if (d6 >= 0 && d5 <= d6) { out[0] = cx; out[1] = cy; out[2] = cz; return; }
-  const vb = d5 * d2 - d1 * d6;
-  if (vb <= 0 && d2 >= 0 && d6 <= 0) {
-    const w = d2 / (d2 - d6);
-    out[0] = ax + acx * w; out[1] = ay + acy * w; out[2] = az + acz * w; return;
-  }
-  const va = d3 * d6 - d5 * d4;
-  if (va <= 0 && (d4 - d3) >= 0 && (d5 - d6) >= 0) {
-    const w = (d4 - d3) / ((d4 - d3) + (d5 - d6));
-    out[0] = bx + (cx - bx) * w; out[1] = by + (cy - by) * w; out[2] = bz + (cz - bz) * w; return;
-  }
-  const denom = 1 / (va + vb + vc);
-  const v = vb * denom, w = vc * denom;
-  out[0] = ax + abx * v + acx * w; out[1] = ay + aby * v + acy * w; out[2] = az + abz * v + acz * w;
+// Rotation of v about axis (any length) by angle a (btQuaternion(axis, a) + quatRotate).
+function rotateAxisAngle(axis, a, v) {
+  const l = Math.hypot(axis[0], axis[1], axis[2]);
+  const ux = axis[0] / l, uy = axis[1] / l, uz = axis[2] / l;
+  const c = Math.cos(a), s = Math.sin(a), d = ux * v[0] + uy * v[1] + uz * v[2];
+  return [
+    v[0] * c + (uy * v[2] - uz * v[1]) * s + ux * d * (1 - c),
+    v[1] * c + (uz * v[0] - ux * v[2]) * s + uy * d * (1 - c),
+    v[2] * c + (ux * v[1] - uy * v[0]) * s + uz * d * (1 - c),
+  ];
 }
 
 let _shared = null;
+/** The simulation's arena: triangles not covered by RocketSim's planes. */
 export function getCollisionMesh() {
-  if (!_shared) _shared = new CollisionMesh(buildArenaSurfaces({ filletSteps: 16, arcSteps: 6, maxSeg: 1024 }));
+  if (!_shared) {
+    _shared = new CollisionMesh(buildArenaSurfaces({ filletSteps: 16, arcSteps: 6, maxSeg: 1024 }), 256, { filter: isPlaneCoveredTriangle });
+  }
   return _shared;
 }

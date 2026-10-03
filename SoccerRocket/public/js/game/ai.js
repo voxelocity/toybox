@@ -281,7 +281,7 @@ export class Bot {
     if (car.numContacts === 0 && !car.isJumping) { this.recover(c); this.unstuck(dt, c); return; }
 
     // turtle
-    if (car.numContacts === 0 && car.worldContact) { c.jump = Math.random() < 0.5; return; }
+    if (car.numContacts === 0 && car.worldContact.hasContact) { c.jump = Math.random() < 0.5; return; }
 
     if (this.reverseTime > 0) {
       this.reverseTime -= dt;
@@ -434,7 +434,7 @@ export class Bot {
     else this.stuckTime = 0;
     if (this.stuckTime > 1.2) { this.stuckTime = 0; this.reverseTime = 0.6; }
     // upside down on the ground: autoflip
-    if (car.numContacts === 0 && car.worldContact && car.up.z < -0.5) c.jump = !car.lastJump;
+    if (car.numContacts === 0 && car.worldContact.hasContact && car.up.z < -0.5) c.jump = !car.lastJump;
   }
 
   kickoff(ctx, dt) {

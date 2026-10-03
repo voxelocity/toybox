@@ -11,7 +11,7 @@ export const GRAVITY_Z = -650;
 export const ARENA = {
   X: 4096,            // side walls at x = +-X
   Y: 5120,            // back walls at y = +-Y
-  Z: 2044,            // ceiling
+  Z: 2044,            // ceiling of the arena mesh
   CORNER: 8064,       // corner bevel plane |x| + |y| = CORNER
   R: 256,             // floor/wall and ceiling/wall transition radius
   GOAL_HALF_W: 893,   // posts at x = +-893
@@ -19,6 +19,9 @@ export const ARENA = {
   GOAL_DEPTH: 880,    // back of net at |y| = Y + depth
 };
 export const GOAL_SCORE_Y = 5124.25; // ball centre must pass this + radius
+// RocketSim adds infinite planes: floor z=0, ceiling z=ARENA_HEIGHT, side
+// walls x=+-ARENA.X (contacts.js PLANES). Our mesh ceiling (2044) is in front.
+export const ARENA_HEIGHT = 2048;
 
 // --- Masses ----------------------------------------------------------------
 export const CAR_MASS = 180;
@@ -82,10 +85,15 @@ export const BOOST_ACCEL_GROUND = 2975 / 3;
 export const BOOST_ACCEL_AIR = 3175 / 3;
 export const BOOST_SPAWN_AMOUNT = 100 / 3;
 
+// RocketSim BoostPads: pickup if the car origin is within the cylinder
+// (radius, |dz| < CYL_HEIGHT) or, for the car that was on the pad last tick,
+// if its AABB overlaps the pad box (BOX_RAD, BOX_HEIGHT above the pad).
 export const BOOST_PAD = {
-  BIG_RADIUS: 208, SMALL_RADIUS: 144, HEIGHT: 168,
+  BIG_RADIUS: 208, SMALL_RADIUS: 144, CYL_HEIGHT: 95,
+  BIG_BOX_RAD: 160, SMALL_BOX_RAD: 120, BOX_HEIGHT: 64,
   BIG_AMOUNT: 100, SMALL_AMOUNT: 12,
   BIG_COOLDOWN: 10, SMALL_COOLDOWN: 4,
+  GRID_MAX_Z: 95 + 250, // BoostPadGrid::EXTENT_Z: cars above this never pick up
 };
 
 // [x, y, isBig]
@@ -95,7 +103,7 @@ export const BOOST_PADS = [
   [-1788, -2300, 0], [1788, -2300, 0], [-2048, -1036, 0], [0, -1024, 0], [2048, -1036, 0],
   [-3584, 0, 1], [-1024, 0, 0], [1024, 0, 0], [3584, 0, 1],
   [-2048, 1036, 0], [0, 1024, 0], [2048, 1036, 0], [-1788, 2300, 0], [1788, 2300, 0],
-  [-3584, 2484, 0], [3584, 2484, 0], [0, 2816, 0], [-940, 3310, 0], [940, 3308, 0],
+  [-3584, 2484, 0], [3584, 2484, 0], [0, 2816, 0], [-940, 3308, 0], [940, 3308, 0],
   [-3072, 4096, 1], [3072, 4096, 1], [-1792, 4184, 0], [1792, 4184, 0], [0, 4240, 0],
 ];
 
@@ -133,6 +141,10 @@ export const AUTOROLL_FORCE = 100;
 export const AUTOROLL_TORQUE = 80;
 
 // --- Collisions --------------------------------------------------------------
+export const CAR_COLLISION_FRICTION = 0.3;   // body defaults (combined per pair)
+export const CAR_COLLISION_RESTITUTION = 0.1;
+export const ARENA_FRICTION = 0.6;
+export const ARENA_RESTITUTION = 0.3;
 export const CARBALL_FRICTION = 2.0;
 export const CARBALL_RESTITUTION = 0.0;
 export const CARWORLD_FRICTION = 0.3;
@@ -173,11 +185,14 @@ export const RESPAWN_SPOTS = [
 // --- Car body preset (hitbox + wheels) -------------------------------------
 // All visual body styles share this hitbox so every car plays identically.
 // hitbox: full size (length, width, height) and offset of its centre from the
-// car origin (centre of mass). Wheels: connection points (x, |y|, z), radius,
-// suspension rest length.
+// car origin (centre of mass), as reported by the game (used to fit the car
+// models). simHitbox / simOffset: the box RocketSim simulates (CarConfig.cpp
+// OCTANE; it reproduces RL's inertia matrix), used for collisions and inertia.
+// Wheels: connection points (x, |y|, z), radius, suspension rest length.
 export const CAR_PRESETS = {
   octane: {
     name: 'Octane-class', hitbox: [118.0074, 84.1994, 36.1591], offset: [13.8757, 0, 20.7553],
+    simHitbox: [120.507, 86.6994, 38.6591], simOffset: [13.8757, 0, 20.755],
     front: { x: 51.25, y: 25.90, z: 20.755, radius: 12.50, rest: 38.755 },
     back: { x: -33.75, y: 29.50, z: 20.755, radius: 15.00, rest: 37.055 },
   },

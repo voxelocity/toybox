@@ -1,11 +1,35 @@
 // Car rigid body with raycast suspension, friction curves, throttle / brake,
 // steering, boost, jumps, dodges and air control at 120 Hz.
+//
+// Interface with World (world.js runs RocketSim's Arena::Step order):
+//   preTick(world, dt)   once per tick before collision detection, on the
+//                        start-of-tick transform. Wheel rays go through
+//                        world.raycastWheel(). Effects RocketSim applies with
+//                        applyImpulse / applyCentralImpulse / setLinearVelocity
+//                        (suspension, tyre friction, jump start, double jump,
+//                        dodge, auto-flip, flip z-damping) change vel / angVel
+//                        immediately. Effects it applies as FORCES / TORQUES
+//                        (sticky, boost, jump hold, air throttle, air control,
+//                        flip torque, auto-roll) are accumulated as
+//                        accelerations into extForce (uu/s^2) and extTorque
+//                        (rad/s^2); the solver integrates them (with gravity,
+//                        which World adds) as F/m*dt and I^-1*tau*dt.
+//   (collision)          World's contact callbacks set worldContact
+//                        {hasContact, normal} (read next preTick, cleared at
+//                        the end of preTick), add bump velocity to
+//                        velocityImpulseCache, set isDemoed, ballHitTick.
+//   postTick(world, dt)  after integration: supersonic state, bump cooldown.
+//   finishPhysicsTick()  adds velocityImpulseCache, then the single velocity
+//                        clamp (2300 uu/s, 5.5 rad/s).
+// Collision shape: RocketSim's Octane box (half extents incl. Bullet margin
+// in `half`, `margin`, offset hbOffset), inertia from btBoxShape.
 import { V3, Quat, M3, applyInvInertia, curve, clamp, sign } from './math.js';
 import * as K from './constants.js';
+import { makeRayHit, HIT_STATIC, HIT_BALL } from './contacts.js';
 
-const _v = new V3(), _w = new V3(), _r = new V3(), _t = new V3(), _a = new V3(), _b = new V3(), _c = new V3();
-const _fwd = new V3(), _left = new V3(), _up = new V3();
-const _hit = { t: 0, nx: 0, ny: 0, nz: 0 };
+const _v = new V3(), _r = new V3(), _t = new V3(), _a = new V3(), _b = new V3(), _c = new V3(), _s = new V3();
+const _fwd = new V3(), _left = new V3(), _up = new V3(), _down = new V3();
+const _hit = makeRayHit();
 
 export function makeControls() {
   return { throttle: 0, steer: 0, pitch: 0, yaw: 0, roll: 0, jump: false, boost: false, handbrake: false };
@@ -18,13 +42,22 @@ export class Car {
     this.name = '';
     const P = K.CAR_PRESETS[preset];
     this.preset = P;
-    this.hitbox = new V3(P.hitbox[0], P.hitbox[1], P.hitbox[2]);
-    this.half = new V3(P.hitbox[0] / 2, P.hitbox[1] / 2, P.hitbox[2] / 2);
-    this.hbOffset = new V3(P.offset[0], P.offset[1], P.offset[2]);
+    const HB = P.simHitbox || P.hitbox, OF = P.simOffset || P.offset;
+    this.hitbox = new V3(HB[0], HB[1], HB[2]);
+    this.half = new V3(HB[0] / 2, HB[1] / 2, HB[2] / 2);
+    this.hbOffset = new V3(OF[0], OF[1], OF[2]);
+    // btBoxShape safe margin: min(0.04 bt, 0.1 * smallest half extent)
+    this.margin = Math.min(0.04 * 50, 0.1 * Math.min(this.half.x, this.half.y, this.half.z));
+    // Bullet relative contact threshold: 0.02 * (bounding radius + |centre|)
+    this.contactThreshold = 0.02 * (this.half.len() + this.hbOffset.len());
     this.mass = K.CAR_MASS;
     this.invMass = 1 / K.CAR_MASS;
-    const [L, W, H] = P.hitbox, m = K.CAR_MASS;
+    // btBoxShape::calculateLocalInertia on the full (margin-inclusive) box
+    const [L, W, H] = HB, m = K.CAR_MASS;
     this.invInertia = new V3(12 / (m * (W * W + H * H)), 12 / (m * (L * L + H * H)), 12 / (m * (L * L + W * W)));
+    this.invInertiaLocal = this.invInertia;
+    this.friction = K.CAR_COLLISION_FRICTION;
+    this.restitution = K.CAR_COLLISION_RESTITUTION;
 
     this.wheels = [];
     for (const [i, def] of [[0, P.front], [1, P.front], [2, P.back], [3, P.back]]) {
@@ -37,8 +70,10 @@ export class Car {
         reach: def.rest + def.radius - K.SUSPENSION_SUBTRACTION, // ray length (contact range)
         scale: i < 2 ? K.SUSPENSION_FORCE_SCALE_FRONT : K.SUSPENSION_FORCE_SCALE_BACK,
         contact: false,
+        hitStatic: false, hitType: -1, hitBody: null,
         normal: new V3(0, 0, 1),
         point: new V3(),
+        hard: new V3(),
         susLen: def.rest - K.MAX_SUSPENSION_TRAVEL,
         steer: 0,
         spin: 0,          // visual wheel rotation (rad)
@@ -54,8 +89,16 @@ export class Car {
     this.angVel = new V3();
     this.quat = new Quat();
     this.R = new M3();
+    // solver inputs / outputs (see header)
+    this.extForce = new V3();
+    this.extTorque = new V3();
+    this.velocityImpulseCache = new V3();
+    this.worldContact = { hasContact: false, normal: new V3(0, 0, 1) };
+    this.inWorld = false; // simulated this tick (not demoed / frozen)
+    this.sb = null;       // solver body (solver.js)
     this.controls = { throttle: 0, steer: 0, pitch: 0, yaw: 0, roll: 0, jump: false, boost: false, handbrake: false };
     this.lastJump = false;
+    this.events = [];
     this.reset(0, 0, K.CAR_SPAWN_REST_Z, Math.PI / 2);
   }
 
@@ -65,6 +108,8 @@ export class Car {
     this.angVel.set(0, 0, 0);
     this.quat.setEuler(yaw, 0, 0);
     this.R.fromQuat(this.quat);
+    this.extForce.set(0, 0, 0); this.extTorque.set(0, 0, 0);
+    this.velocityImpulseCache.set(0, 0, 0);
     this.boost = K.BOOST_SPAWN_AMOUNT;
     this.isOnGround = true;
     this.numContacts = 4;
@@ -78,11 +123,11 @@ export class Car {
     this.isSupersonic = false; this.supersonicTime = 0;
     this.isDemoed = false; this.respawnTimer = 0;
     this.isAutoFlipping = false; this.autoFlipTimer = 0; this.autoFlipScale = 0;
-    this.worldContact = false; this.worldNormal = new V3(0, 0, 1);
+    this.worldContact.hasContact = false; this.worldContact.normal.set(0, 0, 1);
     this.bumpCooldown = 0; this.bumpOther = -1;
     this.ballHitTick = -10;
     this.lastJump = false;
-    this.events = this.events || [];
+    this.events.length = 0;
     for (const w of this.wheels || []) { w.contact = true; w.susLen = w.rest - 1.9; }
     this.wasOnGround = true;
     this.forwardSpeed = 0;
@@ -117,63 +162,55 @@ export class Car {
     return out.set(this.vel.x + w.y * rz - w.z * ry, this.vel.y + w.z * rx - w.x * rz, this.vel.z + w.x * ry - w.y * rx);
   }
 
+  /** Car::Demolish: the body stops being simulated from the next tick on. */
   demolish() {
     this.isDemoed = true;
     this.respawnTimer = K.DEMO_RESPAWN_TIME;
-    this.vel.set(0, 0, 0); this.angVel.set(0, 0, 0);
     this.isBoosting = false;
   }
 
   /**
-   * Pre-integration update: wheel contacts and all control forces.
-   * world: { mesh, ball, unlimitedBoost, tick }
+   * Vehicle update before collision detection (see header).
+   * world: World (raycastWheel, ball, unlimitedBoost, tick)
    */
-  preStep(world, dt) {
+  preTick(world, dt) {
     const ctl = this.controls;
     this.events.length = 0;
     if (this.isDemoed) return;
-    if (this.bumpCooldown > 0) this.bumpCooldown -= dt;
 
     const R = this.R.fromQuat(this.quat);
     const fwd = R.col(0, _fwd), left = R.col(1, _left), up = R.col(2, _up);
-    const m = this.mass;
+    const F = this.extForce, Tq = this.extTorque;
 
-    // ---- wheel ray casts -----------------------------------------------
-    let n = 0;
-    const upSum = _t.set(0, 0, 0);
-    const mesh = world.mesh;
+    // ---- wheel ray casts (arena both sides, ball, other cars) -------------
+    let n = 0, nStatic = 0, nBall = 0;
+    const upSum = _t.set(0, 0, 0), staticUpSum = _s.set(0, 0, 0);
+    const down = _down.set(-up.x, -up.y, -up.z);
     for (const w of this.wheels) {
       R.mulV(w.local, _v).add(this.pos); // hardpoint
-      const len = w.reach;
-      w.hard = w.hard || new V3();
       w.hard.copy(_v);
-      if (mesh.raycast(_v.x, _v.y, _v.z, -up.x, -up.y, -up.z, len, _hit)) {
+      if (world.raycastWheel(_v, down, w.reach, this, _hit)) {
         w.contact = true;
+        w.hitType = _hit.type; w.hitBody = _hit.body; w.hitStatic = _hit.type === HIT_STATIC;
         w.normal.set(_hit.nx, _hit.ny, _hit.nz);
         w.susLen = _hit.t - w.radius;
-        w.point.copy(_v).addScaled(up, -_hit.t);
+        w.point.set(_hit.px, _hit.py, _hit.pz);
         upSum.add(w.normal);
         n++;
+        if (w.hitStatic) { nStatic++; staticUpSum.add(w.normal); }
+        if (_hit.type === HIT_BALL) nBall++;
       } else {
-        w.contact = false;
+        w.contact = false; w.hitStatic = false; w.hitType = -1; w.hitBody = null;
         w.susLen = w.rest;
       }
     }
-    // wheels touching the ball (used for flip resets)
-    this.ballWheelContacts = 0;
-    if (world.ball) {
-      const bp = world.ball.pos, br = K.BALL_RADIUS;
-      for (const w of this.wheels) {
-        R.mulV(w.local, _v).add(this.pos).addScaled(up, -(w.rest * 0.6));
-        if (_v.distTo(bp) < br + w.radius + 6) this.ballWheelContacts++;
-      }
-    }
+    this.ballWheelContacts = nBall;
 
     const wasOnGround = this.isOnGround;
     this.numContacts = n;
     this.isOnGround = n >= 3;
-    if (this.isOnGround && !wasOnGround) {
-      this.lastLandSpeed = Math.abs(this.vel.dot(upSum.clone().normalize()));
+    if (this.isOnGround && !wasOnGround && nBall < 3) {
+      this.lastLandSpeed = Math.abs(this.vel.dot(_a.copy(upSum).normalize()));
       this.events.push('land');
     }
     const forwardSpeed = this.vel.dot(fwd);
@@ -210,6 +247,7 @@ export class Car {
       realBrake = absFwd < K.STOPPING_FORWARD_VEL ? 1 : K.COASTING_BRAKE_FACTOR;
     }
     const driveScale = curve(K.DRIVE_SPEED_TORQUE_CURVE, absFwd);
+    const m = this.mass;
     const engineForce = engineThrottle * m * (K.THROTTLE_ACCEL / 4) * driveScale;
     const brakeImpulse = realBrake * m * (K.BRAKE_ACCEL / 4) * dt;
 
@@ -219,7 +257,7 @@ export class Car {
     steerAngle *= clamp(ctl.steer, -1, 1);
     this.wheels[0].steer = this.wheels[1].steer = steerAngle;
 
-    // ---- suspension ------------------------------------------------------------
+    // ---- suspension (impulses) -------------------------------------------------
     const jumpPressed = ctl.jump && !this.lastJump;
     const jumpingOff = this.isJumping || (this.isOnGround && jumpPressed);
     for (const w of this.wheels) {
@@ -243,7 +281,7 @@ export class Car {
       this.applyImpulseAt(nrm.x * j, nrm.y * j, nrm.z * j, _r.x, _r.y, _r.z);
     }
 
-    // ---- tyre friction -----------------------------------------------------------
+    // ---- tyre friction (impulses) ------------------------------------------------
     let wheelsOnGround = 0;
     for (const w of this.wheels) if (w.contact) wheelsOnGround++;
     const fullStick = realThrottle !== 0 || absFwd > K.STOPPING_FORWARD_VEL;
@@ -307,18 +345,20 @@ export class Car {
       }
     }
 
-    // ---- sticky force ----------------------------------------------------------------
-    if (n >= 3 && !jumpingOff) {
-      upSum.normalize();
+    // ---- sticky force (force; static-ground wheels only) -------------------------------
+    if (nStatic >= 3 && !jumpingOff) {
+      staticUpSum.normalize();
       let scale = K.STICKY_FORCE_BASE;
-      if (fullStick) scale += 1 - Math.abs(upSum.z);
-      this.vel.addScaled(upSum, scale * K.GRAVITY_Z * dt);
+      if (fullStick) scale += 1 - Math.abs(staticUpSum.z);
+      F.addScaled(staticUpSum, scale * K.GRAVITY_Z);
     }
 
     // ---- jumping -------------------------------------------------------------------
     if (this.isOnGround) {
       this.airTime = 0;
       this.airTimeSinceJump = 0;
+      // landing on the ball with used jumps restores them (flip reset)
+      if (!wasOnGround && nBall >= 3 && (this.hasFlipped || this.hasDoubleJumped || this.hasJumped)) this.events.push('flipReset');
       if (!this.isJumping) { this.hasJumped = false; }
       this.hasDoubleJumped = false;
       this.hasFlipped = false;
@@ -327,12 +367,6 @@ export class Car {
       this.airTime += dt;
       if (this.hasJumped && !this.isJumping) this.airTimeSinceJump += dt;
       else this.airTimeSinceJump = 0;
-    }
-    // flip reset: wheels on the ball
-    if (!this.isOnGround && this.ballWheelContacts >= 3 && (this.hasFlipped || this.hasDoubleJumped || this.hasJumped)) {
-      this.hasFlipped = false; this.hasDoubleJumped = false; this.hasJumped = false;
-      this.airTimeSinceJump = 0;
-      this.events.push('flipReset');
     }
 
     if (this.isOnGround && jumpPressed && !this.isJumping) {
@@ -343,7 +377,7 @@ export class Car {
     if (this.isJumping) {
       if (this.jumpTime < K.JUMP_MIN_TIME || (ctl.jump && this.jumpTime < K.JUMP_MAX_TIME)) {
         const acc = K.JUMP_ACCEL * (this.jumpTime < K.JUMP_MIN_TIME ? K.JUMP_PRE_MIN_ACCEL_SCALE : 1);
-        this.vel.addScaled(up, acc * dt);
+        F.addScaled(up, acc);
       } else {
         this.isJumping = false;
       }
@@ -366,11 +400,12 @@ export class Car {
     }
 
     // ---- auto-flip (turtle recovery) ----------------------------------------------------
-    if (n === 0 && this.worldContact && jumpPressed && up.dot(this.worldNormal) < -K.AUTOFLIP_NORMZ_THRESH) {
+    const wc = this.worldContact;
+    if (n === 0 && wc.hasContact && jumpPressed && up.dot(wc.normal) < -K.AUTOFLIP_NORMZ_THRESH) {
       this.isAutoFlipping = true; this.autoFlipTimer = 0;
       // roll toward whichever side is lower relative to the surface
-      this.autoFlipScale = left.dot(this.worldNormal) > 0 ? 1 : -1;
-      this.vel.addScaled(this.worldNormal, K.AUTOFLIP_IMPULSE);
+      this.autoFlipScale = left.dot(wc.normal) > 0 ? 1 : -1;
+      this.vel.addScaled(wc.normal, K.AUTOFLIP_IMPULSE);
       this.events.push('autoflip');
     }
     if (this.isAutoFlipping) {
@@ -383,47 +418,32 @@ export class Car {
       }
     }
 
-    // ---- air control and dodge torque ------------------------------------------------
+    // ---- air control and dodge torque (torques) ------------------------------------------
     if (!this.isOnGround) this._airTorque(dt, n === 0, fwd, left, up);
 
     // ---- auto-roll: partial wheel contact pulls the car onto the surface ----------------
     if (n > 0 && n < 4 && !this.isJumping) {
       upSum.normalize();
       _a.crossVectors(up, upSum); // rotation axis toward the surface normal
-      this.angVel.addScaled(_a, K.AUTOROLL_TORQUE * K.CAR_TORQUE_SCALE * dt);
-      this.vel.addScaled(upSum, -K.AUTOROLL_FORCE * dt);
+      Tq.addScaled(_a, K.AUTOROLL_TORQUE * K.CAR_TORQUE_SCALE);
+      F.addScaled(upSum, -K.AUTOROLL_FORCE);
     }
 
-    // ---- boost force -----------------------------------------------------------------
+    // ---- boost force ---------------------------------------------------------------------
     if (this.isBoosting) {
       const acc = this.isOnGround ? K.BOOST_ACCEL_GROUND : K.BOOST_ACCEL_AIR;
-      this.vel.addScaled(fwd, acc * dt);
+      F.addScaled(fwd, acc);
     }
     // air throttle
-    if (n === 0) this.vel.addScaled(fwd, clamp(ctl.throttle, -1, 1) * K.THROTTLE_AIR_ACCEL * dt);
+    if (n === 0) F.addScaled(fwd, clamp(ctl.throttle, -1, 1) * K.THROTTLE_AIR_ACCEL);
 
-    // ---- gravity ---------------------------------------------------------------------
-    this.vel.z += K.GRAVITY_Z * dt;
-
-    // flip z-damping
+    // flip z-damping (velocity, before this tick's forces are integrated)
     if (this.isFlipping) {
       this.flipTime += dt;
       if (this.flipTime >= K.FLIP_Z_DAMP_START && (this.vel.z < 0 || this.flipTime < K.FLIP_Z_DAMP_END)) {
         this.vel.z *= Math.pow(1 - K.FLIP_Z_DAMP_120, dt * 120);
       }
     } else if (this.hasFlipped) this.flipTime += dt;
-
-    this.clampVelocities();
-
-    // ---- supersonic ------------------------------------------------------------------
-    const speed = this.vel.len();
-    if (speed >= K.SUPERSONIC_START_SPEED) {
-      if (!this.isSupersonic) this.events.push('supersonic');
-      this.isSupersonic = true; this.supersonicTime = 0;
-    } else if (this.isSupersonic && speed >= K.SUPERSONIC_MAINTAIN_MIN_SPEED) {
-      this.supersonicTime += dt;
-      if (this.supersonicTime > K.SUPERSONIC_MAINTAIN_MAX_TIME) this.isSupersonic = false;
-    } else this.isSupersonic = false;
 
     // visual wheel spin
     for (const w of this.wheels) {
@@ -432,7 +452,30 @@ export class Car {
       w.spin += (v / w.radius) * dt;
     }
     this.lastJump = ctl.jump;
-    this.worldContact = false;
+    wc.hasContact = false;
+  }
+
+  /** Car::_PostTickUpdate: after integration (supersonic, bump cooldown). */
+  postTick(world, dt) {
+    if (this.isDemoed) return;
+    const s2 = this.vel.lenSq();
+    const was = this.isSupersonic;
+    if (this.isSupersonic && this.supersonicTime < K.SUPERSONIC_MAINTAIN_MAX_TIME) {
+      this.isSupersonic = s2 >= K.SUPERSONIC_MAINTAIN_MIN_SPEED * K.SUPERSONIC_MAINTAIN_MIN_SPEED;
+    } else {
+      this.isSupersonic = s2 >= K.SUPERSONIC_START_SPEED * K.SUPERSONIC_START_SPEED;
+    }
+    this.supersonicTime = this.isSupersonic ? this.supersonicTime + dt : 0;
+    if (this.isSupersonic && !was) this.events.push('supersonic');
+    if (this.bumpCooldown > 0) this.bumpCooldown = Math.max(this.bumpCooldown - dt, 0);
+  }
+
+  /** Car::_FinishPhysicsTick: add the velocity cache (bumps), then clamp once. */
+  finishPhysicsTick() {
+    if (this.isDemoed) return;
+    const c = this.velocityImpulseCache;
+    if (c.x !== 0 || c.y !== 0 || c.z !== 0) { this.vel.add(c); c.set(0, 0, 0); }
+    this.clampVelocities();
   }
 
   _dodge(fwd) {
@@ -471,8 +514,9 @@ export class Car {
     this.events.push('flip');
   }
 
+  // Air control and flip torques, accumulated as angular acceleration (extTorque).
   _airTorque(dt, airControl, fwd, left, up) {
-    const ctl = this.controls;
+    const ctl = this.controls, Tq = this.extTorque;
     if (this.isFlipping) this.isFlipping = this.hasFlipped && this.flipTime < K.FLIP_TORQUE_TIME;
     let doAir = false;
     if (this.isFlipping) {
@@ -486,7 +530,7 @@ export class Car {
         }
         const roll = rt.x * K.FLIP_TORQUE_ROLL, pitchDown = rt.y * pitchScale * K.FLIP_TORQUE_PITCH;
         // roll right = +about forward; nose down = +about left
-        this.angVel.addScaled(fwd, roll * dt).addScaled(left, pitchDown * dt);
+        Tq.addScaled(fwd, roll).addScaled(left, pitchDown);
       } else doAir = true;
     } else doAir = true;
     doAir = doAir && !this.isAutoFlipping && airControl;
@@ -502,18 +546,11 @@ export class Car {
     const aPitch = (p * K.AIR_TORQUE.pitch - wPitch * K.AIR_DAMPING.pitch * (1 - Math.abs(p))) * S;
     const aYaw = (y * K.AIR_TORQUE.yaw - wYaw * K.AIR_DAMPING.yaw * (1 - Math.abs(y))) * S;
     const aRoll = (r * K.AIR_TORQUE.roll - wRoll * K.AIR_DAMPING.roll) * S;
-    w.addScaled(left, -aPitch * dt).addScaled(up, -aYaw * dt).addScaled(fwd, aRoll * dt);
+    Tq.addScaled(left, -aPitch).addScaled(up, -aYaw).addScaled(fwd, aRoll);
   }
 
   clampVelocities() {
     this.vel.clampLength(K.CAR_MAX_SPEED);
     this.angVel.clampLength(K.CAR_MAX_ANG_SPEED);
-  }
-
-  integrate(dt) {
-    if (this.isDemoed) return;
-    this.pos.addScaled(this.vel, dt);
-    this.quat.integrate(this.angVel, dt);
-    this.R.fromQuat(this.quat);
   }
 }
