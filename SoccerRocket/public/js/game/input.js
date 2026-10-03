@@ -3,19 +3,51 @@
 //   RT throttle, LT reverse, left stick steer/pitch/yaw, A jump, B boost,
 //   X powerslide / air roll, Y ball cam, LB/RB air roll left/right,
 //   Start pause, Back scoreboard, right stick camera swivel.
+// These are Rocket League's controller defaults (its air roll left / right are
+// unbound; LB / RB are spare there, so they roll here). The left stick goes
+// through the game's Controls settings: Controller Deadzone (0.10), Deadzone
+// Shape (Cross / Circle), Steering Sensitivity and Aerial Sensitivity (1.00);
+// Dodge Deadzone (0.50) is applied by the car (CarConfig::dodgeDeadzone).
+
+import { migrateControls } from '../settings.js';
 
 const PAD = { A: 0, B: 1, X: 2, Y: 3, LB: 4, RB: 5, LT: 6, RT: 7, BACK: 8, START: 9, LS: 10, RS: 11, UP: 12, DOWN: 13, LEFT: 14, RIGHT: 15 };
 
-function radial(x, y, dz) {
+const QUARTER = Math.PI / 4;
+const clamp1 = (v) => (v < -1 ? -1 : v > 1 ? 1 : v);
+const axisDz = (v, dz) => { const a = Math.abs(v); return a <= dz ? 0 : Math.sign(v) * Math.min(1, (a - dz) / (1 - dz)); };
+
+// Circle: a round dead area; the stick's magnitude past it is rescaled to 0..1.
+function radial(x, y, dz, out) {
   const m = Math.hypot(x, y);
-  if (m < dz) return [0, 0];
+  if (m <= dz) { out[0] = 0; out[1] = 0; return out; }
   const k = Math.min(1, (m - dz) / (1 - dz)) / m;
-  return [x * k, y * k];
+  out[0] = x * k; out[1] = y * k;
+  return out;
+}
+
+// Cross: the deflection's angle is mapped onto the square (45 degrees reads as
+// full on both axes, so diagonals reach (1, 1) like a keyboard), then each axis
+// gets its own dead band, so the dead area is a cross along the axes.
+function cross(x, y, dz, out) {
+  const m = Math.min(1, Math.hypot(x, y));
+  if (m === 0) { out[0] = 0; out[1] = 0; return out; }
+  const ax = Math.abs(x), ay = Math.abs(y);
+  let sx, sy;
+  if (ax >= ay) { sx = m; sy = m * Math.atan2(ay, ax) / QUARTER; } else { sy = m; sx = m * Math.atan2(ax, ay) / QUARTER; }
+  out[0] = axisDz(Math.sign(x) * sx, dz);
+  out[1] = axisDz(Math.sign(y) * sy, dz);
+  return out;
+}
+
+/** Applies Deadzone Shape + Controller Deadzone to a stick (out = [x, y]). */
+export function stick(x, y, dz, shape, out = [0, 0]) {
+  return shape === 'circle' ? radial(x, y, dz, out) : cross(x, y, dz, out);
 }
 
 export class Input {
   constructor(settings, canvas) {
-    this.settings = settings;
+    this.settings = migrateControls(settings);
     this.keys = new Set();
     this.prevActions = {};
     this.actions = {};
@@ -28,6 +60,8 @@ export class Input {
     this.menuNav = { up: false, down: false, left: false, right: false, accept: false, back: false };
     this.rebindCallback = null;
     this.padRepeat = 0;
+    this.isPlaying = null; // set by the App: () => true while a match is being played
+    this._ls = [0, 0]; this._rs = [0, 0];
 
     const down = (code, e) => {
       if (this.rebindCallback) { e && e.preventDefault(); const cb = this.rebindCallback; this.rebindCallback = null; cb(code); return; }
@@ -37,15 +71,47 @@ export class Input {
     window.addEventListener('keydown', (e) => {
       if (e.target && /INPUT|SELECT|TEXTAREA/.test(e.target.tagName) && e.code !== 'Escape') return;
       if (['Space', 'Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
+      // Ctrl / Cmd + a bound key mid-match (e.g. throttle while a Ctrl powerslide
+      // is held) must not reach the browser: Ctrl+S / F / D / E / P open dialogs or
+      // steal focus. Ctrl+W / T / N can't be cancelled; the App's beforeunload
+      // guard turns a tab close into a 'Leave site?' prompt instead.
+      // With Ctrl / Cmd itself bound, any combo it makes mid-match is accidental.
+      if ((e.ctrlKey || e.metaKey) && this.playing() && (this.isBound(e.code) || this.modifierBound())) e.preventDefault();
       down(e.code, e);
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.code));
     window.addEventListener('blur', () => this.keys.clear());
     canvas.addEventListener('mousedown', (e) => { down('Mouse' + e.button, e); });
-    window.addEventListener('mouseup', (e) => this.keys.delete('Mouse' + e.button));
+    window.addEventListener('mouseup', (e) => {
+      this.keys.delete('Mouse' + e.button);
+      // the thumb buttons navigate back / forward on mouseup
+      if (e.button > 2 && this.playing() && this.isBound('Mouse' + e.button)) e.preventDefault();
+    });
+    // Rebinding from the menu: the menu covers the canvas, so take the next
+    // mouse button anywhere and swallow the click it would otherwise make.
+    window.addEventListener('mousedown', (e) => {
+      if (!this.rebindCallback || e.target === canvas) return;
+      e.preventDefault(); e.stopPropagation();
+      this.swallowClick = true;
+      down('Mouse' + e.button, e);
+    }, true);
+    window.addEventListener('click', (e) => { if (this.swallowClick) { this.swallowClick = false; e.preventDefault(); e.stopPropagation(); } }, true);
+    window.addEventListener('auxclick', (e) => { if (this.swallowClick) { this.swallowClick = false; e.preventDefault(); e.stopPropagation(); } }, true);
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
     window.addEventListener('gamepadconnected', (e) => { this.padIndex = e.gamepad.index; this.onPadConnect && this.onPadConnect(e.gamepad); });
     window.addEventListener('gamepaddisconnected', (e) => { if (this.padIndex === e.gamepad.index) this.padIndex = -1; });
+  }
+
+  playing() { return !!(this.isPlaying && this.isPlaying()); }
+
+  isBound(code) {
+    const b = this.settings.bindings;
+    for (const k in b) if (b[k] && b[k].includes(code)) return true;
+    return false;
+  }
+
+  modifierBound() {
+    return this.isBound('ControlLeft') || this.isBound('ControlRight') || this.isBound('MetaLeft') || this.isBound('MetaRight');
   }
 
   bound(action) {
@@ -79,8 +145,8 @@ export class Input {
     if (pad) {
       const b = (i) => !!(pad.buttons[i] && (pad.buttons[i].pressed || pad.buttons[i].value > 0.5));
       const v = (i) => (pad.buttons[i] ? pad.buttons[i].value : 0);
-      const [lx, ly] = radial(pad.axes[0] || 0, pad.axes[1] || 0, s.deadzone);
-      const [rx, ry] = radial(pad.axes[2] || 0, pad.axes[3] || 0, 0.2);
+      const [lx, ly] = stick(pad.axes[0] || 0, pad.axes[1] || 0, s.deadzone, s.deadzoneShape, this._ls);
+      const [rx, ry] = radial(pad.axes[2] || 0, pad.axes[3] || 0, Math.max(0.2, s.deadzone), this._rs);
       const rt = v(PAD.RT), lt = v(PAD.LT);
       const any = Math.abs(lx) + Math.abs(ly) + rt + lt > 0.05 || pad.buttons.some((x) => x && x.pressed);
       if (any) this.lastDevice = 'gamepad';
@@ -125,14 +191,19 @@ export class Input {
       pause = pause || t.pause;
     }
 
-    c.throttle = throttle;
-    c.steer = steer;
-    c.pitch = Math.max(-1, Math.min(1, pitch));
+    // Steering / Aerial Sensitivity scale the analog input, clamped to full
+    // (keys are digital full scale, so they are left as they are).
+    const analog = this.lastDevice !== 'keyboard';
+    const steerSens = analog && s.steeringSensitivity || 1, airSens = analog && s.aerialSensitivity || 1;
+    const air = steer * airSens;
+    c.throttle = clamp1(throttle);
+    c.steer = clamp1(steer * steerSens);
+    c.pitch = clamp1(pitch * airSens);
     c.jump = jump; c.boost = boost; c.handbrake = slide;
     // air roll: powerslide converts yaw into roll; dedicated buttons roll directly
-    if (rollL || rollR) { c.roll = (rollR ? 1 : 0) - (rollL ? 1 : 0); c.yaw = steer; }
-    else if (slide) { c.roll = steer; c.yaw = 0; }
-    else { c.roll = 0; c.yaw = steer; }
+    if (rollL || rollR) { c.roll = (rollR ? 1 : 0) - (rollL ? 1 : 0); c.yaw = clamp1(air); }
+    else if (slide) { c.roll = clamp1(air); c.yaw = 0; }
+    else { c.roll = 0; c.yaw = clamp1(air); }
 
     const a = { ballCam, scoreboard, pause, jump, boost };
     this.pressed = {};
