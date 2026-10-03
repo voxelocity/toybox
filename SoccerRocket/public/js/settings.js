@@ -23,20 +23,40 @@ export const QUALITY_PRESETS = {
   },
 };
 
+// Rocket League's default keyboard & mouse bindings (primary slot); the second
+// slot holds extras the game leaves free. Powerslide is Left Shift, not Ctrl:
+// on Windows, Ctrl + W / S / F... are browser shortcuts (Ctrl+W closes the tab).
 export const DEFAULT_BINDINGS = {
   throttle: ['KeyW', 'ArrowUp'],
   reverse: ['KeyS', 'ArrowDown'],
   left: ['KeyA', 'ArrowLeft'],
   right: ['KeyD', 'ArrowRight'],
-  jump: ['Space', 'Mouse2'],
-  boost: ['ShiftLeft', 'Mouse0'],
-  powerslide: ['ControlLeft', 'KeyC'],
+  jump: ['Mouse2'],
+  boost: ['Mouse0'],
+  powerslide: ['ShiftLeft'],
   rollLeft: ['KeyQ'],
   rollRight: ['KeyE'],
-  ballCam: ['KeyF', 'Mouse1'],
+  ballCam: ['Space'],
   scoreboard: ['Tab'],
   pause: ['Escape', 'KeyP'],
 };
+
+// Defaults before controls v2; stored bindings still equal to these move to
+// the new defaults, anything the player rebound is kept.
+const OLD_BINDINGS = {
+  jump: ['Space', 'Mouse2'], boost: ['ShiftLeft', 'Mouse0'], powerslide: ['ControlLeft', 'KeyC'], ballCam: ['KeyF', 'Mouse1'],
+};
+
+/** Moves settings stored before controls v2 to the new defaults (in place). */
+export function migrateControls(s) {
+  const c = s.controls;
+  if (c.v >= 2) return s; // (not in DEFAULTS, so it is only set once stored)
+  if (c.deadzone === 0.12) c.deadzone = DEFAULTS.controls.deadzone;
+  const same = (a, b) => Array.isArray(a) && a.length === b.length && a.every((x, i) => x === b[i]);
+  for (const k of Object.keys(OLD_BINDINGS)) if (same(s.bindings[k], OLD_BINDINGS[k])) s.bindings[k] = DEFAULT_BINDINGS[k].slice();
+  c.v = 2;
+  return s;
+}
 
 export const BINDING_LABELS = {
   throttle: 'Throttle / Pitch down', reverse: 'Reverse / Pitch up', left: 'Steer / Yaw left', right: 'Steer / Yaw right',
@@ -50,7 +70,12 @@ const DEFAULTS = {
   showFps: false,
   camera: { fov: 110, distance: 270, height: 100, angle: -3, stiffness: 0.45, swivel: 4.5, transition: 1.2, ballCamDefault: true, toggleBallCam: true, shake: true },
   audio: { master: 0.8, sfx: 0.9, engine: 0.7, crowd: 0.7, ui: 0.7 },
-  controls: { deadzone: 0.12, dodgeDeadzone: 0.5, invertPitch: false, vibration: true, autoThrottleTouch: true, touchSize: 1, mouseSteer: false },
+  // Rocket League's Controls defaults: Controller Deadzone 0.10, Deadzone Shape
+  // Cross, Dodge Deadzone 0.50, Steering / Aerial Sensitivity 1.00.
+  controls: {
+    deadzone: 0.1, deadzoneShape: 'cross', dodgeDeadzone: 0.5, steeringSensitivity: 1, aerialSensitivity: 1,
+    invertPitch: false, vibration: true, autoThrottleTouch: true, touchSize: 1, mouseSteer: false,
+  },
   bindings: DEFAULT_BINDINGS,
   player: { name: 'Player', body: 'striker', color: 0, team: 0 },
   match: { mode: 3, difficulty: 'pro', minutes: 5 },

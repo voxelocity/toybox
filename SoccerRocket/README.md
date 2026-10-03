@@ -122,14 +122,18 @@ rendering.
 |---|---|---|---|
 | Drive | W / S | RT / LT | joystick up/down |
 | Steer / aim | A / D (W/S pitch in air) | left stick | joystick |
-| Jump / dodge | Space, right mouse | A | JUMP |
-| Boost | Shift, left mouse | B | BOOST |
-| Powerslide / air roll | Ctrl, C | X | DRIFT |
+| Jump / dodge | right mouse | A | JUMP |
+| Boost | left mouse | B | BOOST |
+| Powerslide / air roll | Left Shift | X | DRIFT |
 | Air roll left/right | Q / E | LB / RB | |
-| Ball cam | F, middle mouse | Y | CAM |
+| Ball cam | Space | Y | CAM |
 | Scoreboard / pause | Tab / Esc | Back / Start | II |
 
-Keyboard bindings can be changed in Settings › Controls.
+These are Rocket League's default bindings. Keyboard bindings, controller
+deadzone and deadzone shape, dodge deadzone and steering / aerial sensitivity
+(Rocket League's defaults: 0.10, Cross, 0.50, 1.00 / 1.00) are in Settings › Controls.
+Bindings saved by an older version that were still on the old defaults
+(Space jump, Shift boost, Ctrl powerslide, F ball cam) move to these.
 
 ## Graphics
 

@@ -34,6 +34,7 @@ class App {
     this.progress(0.05, 'Preparing stadium…');
 
     this.input = new Input(this.settings, canvas);
+    this.input.isPlaying = () => this.mode === 'match' && !this.paused;
     this.hud = new Hud();
     this.menu = new Menu(this);
     this.audio = new AudioEngine(this.settings);
@@ -66,6 +67,9 @@ class App {
     window.addEventListener('keydown', unlock);
     window.addEventListener('gamepadconnected', unlock);
     window.addEventListener('blur', () => { if (this.mode === 'match' && !this.paused && !this.match.freeplay) this.pause(); });
+    // Ctrl+W / Ctrl+Shift+W can't be cancelled by the page (Ctrl + bound keys
+    // are, in Input): mid-match, ask 'Leave site?' instead of closing the tab.
+    window.addEventListener('beforeunload', (e) => { if (this.mode === 'match') { e.preventDefault(); e.returnValue = ''; } });
     window.addEventListener('resize', () => this.checkOrientation());
     this.checkOrientation();
 
@@ -256,6 +260,7 @@ class App {
       if (m.human) {
         const c = m.human.car.controls;
         Object.assign(c, this.input.controls);
+        if (m.human.car.dodgeDeadzone !== undefined) m.human.car.dodgeDeadzone = this.settings.controls.dodgeDeadzone;
         if (m.state === 'ended') Object.assign(c, { throttle: 0, boost: false, jump: false });
       }
       this.acc += dt;

@@ -216,8 +216,12 @@ export class Menu {
 
   tab_controls(b) {
     const c = this.s.controls, sv = () => this.save();
-    b.appendChild(this.slider('Stick deadzone', 0, 0.4, 0.01, c.deadzone, (v) => v.toFixed(2), (v) => { c.deadzone = v; sv(); }));
-    b.appendChild(this.slider('Dodge deadzone', 0.2, 0.9, 0.05, c.dodgeDeadzone, (v) => v.toFixed(2), (v) => { c.dodgeDeadzone = v; sv(); }));
+    // Rocket League's Settings > Controls (controller section)
+    b.appendChild(this.slider('Controller deadzone', 0, 1, 0.01, c.deadzone, (v) => v.toFixed(2), (v) => { c.deadzone = v; sv(); }));
+    b.appendChild(this.cycle('Deadzone shape', [['cross', 'Cross'], ['circle', 'Circle']], c.deadzoneShape, (v) => { c.deadzoneShape = v; sv(); }));
+    b.appendChild(this.slider('Dodge deadzone', 0.05, 1, 0.01, c.dodgeDeadzone, (v) => v.toFixed(2), (v) => { c.dodgeDeadzone = v; sv(); }));
+    b.appendChild(this.slider('Steering sensitivity', 0.1, 10, 0.05, c.steeringSensitivity, (v) => v.toFixed(2), (v) => { c.steeringSensitivity = v; sv(); }));
+    b.appendChild(this.slider('Aerial sensitivity', 0.1, 10, 0.05, c.aerialSensitivity, (v) => v.toFixed(2), (v) => { c.aerialSensitivity = v; sv(); }));
     b.appendChild(this.toggle('Invert pitch (controller)', c.invertPitch, (v) => { c.invertPitch = v; sv(); }));
     b.appendChild(this.toggle('Vibration', c.vibration, (v) => { c.vibration = v; sv(); }));
     b.appendChild(this.toggle('Touch: auto-accelerate', c.autoThrottleTouch, (v) => { c.autoThrottleTouch = v; sv(); }));
@@ -254,11 +258,11 @@ export class Menu {
       <div class="hcol"><h3>Keyboard &amp; mouse</h3>
         <p><b>W / S</b> drive, reverse · pitch in the air</p>
         <p><b>A / D</b> steer · yaw in the air</p>
-        <p><b>Space</b> or <b>Right mouse</b> jump · press again in the air to double jump or (with a direction) dodge</p>
-        <p><b>Shift</b> or <b>Left mouse</b> boost</p>
-        <p><b>Ctrl</b> / <b>C</b> powerslide · hold in the air to air roll with A/D</p>
+        <p><b>Right mouse</b> jump · press again in the air to double jump or (with a direction) dodge</p>
+        <p><b>Left mouse</b> boost</p>
+        <p><b>Left Shift</b> powerslide · hold in the air to air roll with A/D</p>
         <p><b>Q / E</b> air roll left / right</p>
-        <p><b>F</b> or <b>Middle mouse</b> ball cam · <b>Tab</b> scoreboard · <b>Esc</b> pause</p></div>
+        <p><b>Space</b> ball cam · <b>Tab</b> scoreboard · <b>Esc</b> pause · rebind in Settings › Controls</p></div>
       <div class="hcol"><h3>Controller</h3>
         <p><b>RT / LT</b> throttle / reverse · <b>Left stick</b> steer &amp; aim</p>
         <p><b>A</b> jump · <b>B</b> boost · <b>X</b> powerslide / air roll</p>
