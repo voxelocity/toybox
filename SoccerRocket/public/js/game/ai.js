@@ -78,6 +78,7 @@ export class Bot {
     this.aerialTarget = new V3();
     this.aerialTime = 0;
     this.stuckTime = 0;
+    this.faceReverse = false;
     this.reverseTime = 0;
     this.noise = new V3();
     this.kickoffDone = false;
@@ -302,8 +303,13 @@ export class Bot {
     if (this.role === 'defend' && this.faceBall) {
       const loc = localOf(car, world.ball.pos, _l);
       const ang = Math.atan2(loc.y, loc.x);
-      c.steer = clamp(-ang * 2, -1, 1);
-      c.throttle = Math.abs(ang) > 0.4 ? (loc.x > 0 ? 0.4 : -0.4) : 0;
+      // turn on the spot: forward if the ball is ahead, reverse if it is
+      // behind (with hysteresis, or the car dithers when it is to the side)
+      const aa = Math.abs(ang);
+      this.faceReverse = aa > 0.4 && aa > Math.PI / 2 + (this.faceReverse ? -0.35 : 0.35);
+      c.throttle = aa > 0.4 ? (this.faceReverse ? -0.4 : 0.4) : 0;
+      // reversing turns the nose the other way
+      c.steer = clamp((this.faceReverse ? ang : -ang) * 2, -1, 1);
       c.boost = false;
     }
 
