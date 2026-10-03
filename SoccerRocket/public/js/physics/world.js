@@ -33,7 +33,10 @@
 //       hit = makeRayHit(): t, fraction, px..pz, normal nx..nz facing the
 //       ray, type HIT_STATIC / HIT_BALL / HIT_CAR, body, and that body's
 //       velocity at the hit point vx..vz; a ray that starts inside the ball or
-//       a car does not hit it, a demolished car blocks nothing);
+//       a car does not hit it, a demolished car blocks nothing). Note that
+//       btVehicleRL's friction takes the ground body's velocity with the
+//       CAR-relative contact offset (getVelocityInLocalPoint quirk); use
+//       hit.body for that, vx..vz is the true point velocity;
 //     - applies what RocketSim applies as impulses or by setting the velocity
 //       (suspension, tyre friction, jumps, dodges, auto-flip, flip z-damping)
 //       to vel / angVel directly;
