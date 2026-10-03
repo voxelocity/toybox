@@ -55,10 +55,10 @@ const _hit = makeRayHit();
 const _k = new Float64Array(1);
 const TRAVEL = K.MAX_SUSPENSION_TRAVEL;
 const SIMD_EPSILON_SQ = 1.1920928955078125e-7 * 1.1920928955078125e-7;
-// Bullet's btContactSolverInfo defaults: m_erp, and m_timeStep before the
-// first stepSimulation (RocketSim's first tick computes the extra pushback
-// with it, as the solver info is only updated inside the step).
-const BT_ERP = 0.2, BT_DEFAULT_SOLVER_DT = 1 / 60;
+// Bullet's btContactSolverInfo::m_erp, used by the extra pushback. (Its
+// m_timeStep is the tick's dt once the world has stepped; a freshly created
+// RocketSim Arena still has Bullet's default 1/60 on its very first tick.)
+const BT_ERP = 0.2;
 // RocketSim keeps the car's timers (and boost) in 32-bit floats and compares
 // them with float constants, which decides on which tick a jump, flip or boost
 // phase ends (24 ticks of 1/120 s add up to >= 0.2 in float, < 0.2 in double).
@@ -194,7 +194,7 @@ export class Car {
     this.dodgeDir = new V3();
     this.events = [];
     this._unlimitedBoost = false;
-    this._solverDt = K.DT;
+    this._dt = K.DT;
     this.reset(0, 0, K.CAR_SPAWN_REST_Z, Math.PI / 2);
   }
 
@@ -267,7 +267,7 @@ export class Car {
     v = +c.roll || 0; s.roll = v < -1 ? 1 : v > 1 ? -1 : -v;
     s.jump = !!c.jump; s.boost = !!c.boost; s.handbrake = !!c.handbrake;
     this._unlimitedBoost = !!world.unlimitedBoost;
-    this._solverDt = world.tick === 0 ? BT_DEFAULT_SOLVER_DT : dt;
+    this._dt = dt;
 
     const R = this.R.fromQuat(this.quat);
     const fwd = R.col(0, _fwd), up = R.col(2, _up);
@@ -360,7 +360,7 @@ export class Car {
         // resolveSingleCollision(chassis, ground, hit, normal, solverInfo,
         // traceLen - thresh, false), restitution 0, static ground
         angularTerm(this, _r, nrm);
-        const positionalError = BT_ERP * (w.pushbackThresh - traceLen) / this._solverDt;
+        const positionalError = BT_ERP * (w.pushbackThresh - traceLen) / this._dt;
         let impulse = (positionalError - projVel) / (this.invMass + _k[0]);
         if (impulse < 0) impulse = 0;
         w.extraPushback = impulse / 4;

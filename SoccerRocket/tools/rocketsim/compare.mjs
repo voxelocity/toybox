@@ -17,7 +17,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { runScenarioJS } from './run-js.mjs';
+import { runScenarioJS, writeOracleWarmup } from './run-js.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const BUILD = path.join(HERE, '.build');
@@ -63,7 +63,7 @@ if (!fs.existsSync(RS_BIN) || !fs.existsSync(MESH)) {
   process.exit(2);
 }
 const binStat = fs.statSync(RS_BIN);
-const envKey = `${binStat.size}:${binStat.mtimeMs}:${crypto.createHash('sha1').update(fs.readFileSync(MESH)).digest('hex')}`;
+const envKey = `${binStat.size}:${binStat.mtimeMs}:${crypto.createHash('sha1').update(fs.readFileSync(MESH)).digest('hex')}:warm`;
 fs.mkdirSync(CACHE, { recursive: true });
 const keyOf = (s) => crypto.createHash('sha1').update(envKey).update(s.text).digest('hex').slice(0, 20);
 const t0 = performance.now();
@@ -75,9 +75,9 @@ for (const s of scenarios) {
   else todo.push(s);
 }
 if (todo.length) {
-  const out = execFileSync(RS_BIN, todo.map((s) => s.file), { maxBuffer: 1 << 30, encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] });
-  let parsed = JSON.parse(out);
-  if (!Array.isArray(parsed)) parsed = [parsed];
+  const warm = writeOracleWarmup(CACHE);
+  const out = execFileSync(RS_BIN, [...warm, ...todo.map((s) => s.file)], { maxBuffer: 1 << 30, encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] });
+  const parsed = JSON.parse(out).slice(warm.length);
   todo.forEach((s, i) => {
     rsRes.set(s.file, parsed[i]);
     fs.writeFileSync(path.join(CACHE, keyOf(s) + '.json'), JSON.stringify(parsed[i]));

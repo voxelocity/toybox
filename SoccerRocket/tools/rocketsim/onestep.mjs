@@ -16,7 +16,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { runScenarioJS, quatFromBasis } from './run-js.mjs';
+import { runScenarioJS, quatFromBasis, writeOracleWarmup } from './run-js.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const RS_BIN = process.env.RS_ORACLE || path.join(HERE, '.build', 'rs_oracle');
@@ -44,7 +44,8 @@ sc.every = 1;
 const tmp = path.join(os.tmpdir(), `onestep-${process.pid}.json`);
 fs.writeFileSync(tmp, JSON.stringify(sc));
 let rs;
-try { rs = JSON.parse(execFileSync(RS_BIN, [tmp], { maxBuffer: 1 << 30, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })); }
+const warm = writeOracleWarmup(os.tmpdir());
+try { rs = JSON.parse(execFileSync(RS_BIN, [...warm, tmp], { maxBuffer: 1 << 30, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })).at(-1); }
 finally { fs.unlinkSync(tmp); }
 const byTick = new Map(rs.frames.map((f) => [f.tick, f]));
 

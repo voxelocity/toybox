@@ -9,8 +9,9 @@
 // steer / yaw / roll inputs, which RL defines as "turn/roll to the right", are
 // negated when handed to our Car. Pitch, throttle and the buttons map 1:1.
 // Orientation: RocketSim Angle(yaw, pitch, roll).ToRotMat() is
-// Rz(yaw) * Ry(-pitch) * Rx(-roll); our Quat.setEuler(yaw, pitch, roll) is
-// Rz(yaw) * Ry(-pitch) * Rx(roll), hence setEuler(yaw, pitch, -roll).
+// Rz(yaw) * Ry(-pitch) * Rx(-roll) (btMatrix3x3::setEulerYPR); rotMatRS builds
+// it the same way in 32-bit floats, so that exact ties (roll = pi: which way
+// does the auto-flip go?) break the same way in both engines.
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -24,6 +25,23 @@ const { World } = await import(PHYS + 'world.js');
 const K = await import(PHYS + 'constants.js');
 
 export const PARKED_BALL_POS = [0, 0, 1900];
+
+/**
+ * rs_oracle reuses one Arena per pad setting for every scenario of a run, and
+ * a fresh Arena differs on its first tick: Bullet's solver info still holds
+ * its default 1/60 s time step, which btVehicleRL's extra suspension pushback
+ * reads. These 1-tick scenarios go first in every oracle run, so each real
+ * scenario starts on an Arena that has stepped (like a running game, and
+ * like our World), whatever the batch order. Returns the files' paths.
+ */
+export function writeOracleWarmup(dir) {
+  const docs = [{ name: 'warmup', ticks: 1 }, { name: 'warmup_pads', ticks: 1, pads: true }];
+  return docs.map((d) => {
+    const f = path.join(dir, `${d.name}.json`);
+    fs.writeFileSync(f, JSON.stringify(d));
+    return f;
+  });
+}
 
 export const PHYSICS_DIR = PHYS;
 const v3 = (a, def) => (Array.isArray(a) && a.length >= 3 ? a : def);
@@ -49,6 +67,21 @@ export function quatFromBasis(f, l, u, q) {
     q.set((m02 + m20) / s, (m12 + m21) / s, 0.25 * s, (m10 - m01) / s);
   }
   return q.normalize();
+}
+
+// Angle(yaw, pitch, roll).ToRotMat(): setEulerYPR(yaw, -pitch, -roll) ->
+// setEulerZYX(-roll, -pitch, yaw), in float like RocketSim; returns columns.
+export function rotMatRS(yaw, pitch, roll) {
+  const f = Math.fround;
+  const X = f(-f(roll)), Y = f(-f(pitch)), Z = f(yaw);
+  const ci = f(Math.cos(X)), cj = f(Math.cos(Y)), ch = f(Math.cos(Z));
+  const si = f(Math.sin(X)), sj = f(Math.sin(Y)), sh = f(Math.sin(Z));
+  const cc = f(ci * ch), cs = f(ci * sh), sc = f(si * ch), ss = f(si * sh);
+  return [
+    [f(cj * ch), f(cj * sh), -sj],
+    [f(f(sj * sc) - cs), f(f(sj * ss) + cc), f(cj * si)],
+    [f(f(sj * cc) + ss), f(f(sj * cs) - sc), f(cj * ci)],
+  ];
 }
 
 const norm = (a) => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
@@ -106,7 +139,8 @@ export function runScenarioJS(sc, opts = {}) {
       const u = norm(cross(f, l));
       quatFromBasis(f, l, u, car.quat);
     } else {
-      car.quat.setEuler(cj.yaw ?? 0, cj.pitch ?? 0, -(cj.roll ?? 0));
+      const [f, l, u] = rotMatRS(cj.yaw ?? 0, cj.pitch ?? 0, cj.roll ?? 0);
+      quatFromBasis(f, l, u, car.quat);
     }
     car.R.fromQuat(car.quat);
     car.vel.set(...v3(cj.vel, [0, 0, 0]));
