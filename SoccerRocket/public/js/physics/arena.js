@@ -306,6 +306,7 @@ export class CollisionMesh {
     this.stampId = 0;
     this.cand = new Int32Array(4096);
     this.hits = new Int32Array(4096);
+    this._rayBox = new Float64Array(6);
     this._buildEdgeInfo();
     this._buildBvhOrder();
   }
@@ -504,11 +505,14 @@ export class CollisionMesh {
   }
 
   /**
-   * Collects unique triangles whose grid cells overlap an AABB into this.cand
-   * (allocation-free) and returns the count. Exact tests are up to the caller.
+   * Collects unique triangles whose grid cells overlap an AABB (box =
+   * [x0, y0, z0, x1, y1, z1], a Float64Array so no double is passed as an
+   * argument and boxed) into this.cand and returns the count. Allocation-free;
+   * exact tests are up to the caller.
    */
-  gather(x0, y0, z0, x1, y1, z1) {
+  gather(box) {
     const c = this.cell, d = this.dims, m = this.min;
+    const x0 = box[0], y0 = box[1], z0 = box[2], x1 = box[3], y1 = box[4], z1 = box[5];
     const ix0 = Math.max(0, Math.floor((x0 - m[0]) / c)), ix1 = Math.min(d[0] - 1, Math.floor((x1 - m[0]) / c));
     const iy0 = Math.max(0, Math.floor((y0 - m[1]) / c)), iy1 = Math.min(d[1] - 1, Math.floor((y1 - m[1]) / c));
     const iz0 = Math.max(0, Math.floor((z0 - m[2]) / c)), iz1 = Math.min(d[2] - 1, Math.floor((z1 - m[2]) / c));
@@ -532,17 +536,20 @@ export class CollisionMesh {
   }
 
   /**
-   * Triangles whose AABB overlaps the box, in RocketSim's BVH report order
-   * (triRank), into this.hits. Returns the count. Allocation-free.
+   * Triangles whose AABB overlaps box ([x0, y0, z0, x1, y1, z1]), in
+   * RocketSim's BVH report order (triRank), into this.hits. Returns the count.
+   * Allocation-free.
    */
-  overlapping(x0, y0, z0, x1, y1, z1) {
-    const n = this.gather(x0, y0, z0, x1, y1, z1), cand = this.cand, rank = this.triRank;
+  overlapping(box) {
+    const n = this.gather(box), cand = this.cand, rank = this.triRank, B = this.boxes;
     if (this.hits.length < n) this.hits = new Int32Array(this.cand.length);
     const out = this.hits;
+    const x0 = box[0], y0 = box[1], z0 = box[2], x1 = box[3], y1 = box[4], z1 = box[5];
     let m = 0;
     for (let k = 0; k < n; k++) {
-      const t = cand[k];
-      if (!this.triOverlapsAabb(t, x0, y0, z0, x1, y1, z1)) continue;
+      const t = cand[k], o = t * 6;
+      // TestTriangleAgainstAabb2
+      if (B[o] > x1 || B[o + 3] < x0 || B[o + 1] > y1 || B[o + 4] < y0 || B[o + 2] > z1 || B[o + 5] < z0) continue;
       // insertion sort by rank (few candidates)
       const r = rank[t];
       let j = m++;
@@ -552,20 +559,19 @@ export class CollisionMesh {
     return m;
   }
 
-  /** TestTriangleAgainstAabb2: triangle t's AABB overlaps [x0,x1]x[y0,y1]x[z0,z1]. */
-  triOverlapsAabb(t, x0, y0, z0, x1, y1, z1) {
-    const B = this.boxes, o = t * 6;
-    return B[o] <= x1 && B[o + 3] >= x0 && B[o + 1] <= y1 && B[o + 4] >= y0 && B[o + 2] <= z1 && B[o + 5] >= z0;
-  }
-
   /**
-   * Ray cast against the triangles. Like Bullet's btTriangleRaycastCallback
-   * without kF_FilterBackfaces, both sides are hit and the normal faces the ray
-   * origin (twoSided = false skips back faces). hit = { t, nx, ny, nz, tri }.
+   * Ray cast against the triangles. ray = { ox, oy, oz, dx, dy, dz, len }
+   * (dir unit length). Like Bullet's btTriangleRaycastCallback without
+   * kF_FilterBackfaces, both sides are hit and the normal faces the ray origin
+   * (twoSided = false skips back faces). hit = { t, nx, ny, nz, tri }.
    */
-  raycast(ox, oy, oz, dx, dy, dz, maxT, hit, twoSided = true) {
+  raycast(ray, hit, twoSided = true) {
+    const ox = ray.ox, oy = ray.oy, oz = ray.oz, dx = ray.dx, dy = ray.dy, dz = ray.dz, maxT = ray.len;
     const ex = ox + dx * maxT, ey = oy + dy * maxT, ez = oz + dz * maxT;
-    const n = this.gather(Math.min(ox, ex) - 1, Math.min(oy, ey) - 1, Math.min(oz, ez) - 1, Math.max(ox, ex) + 1, Math.max(oy, ey) + 1, Math.max(oz, ez) + 1);
+    const box = this._rayBox;
+    box[0] = Math.min(ox, ex) - 1; box[1] = Math.min(oy, ey) - 1; box[2] = Math.min(oz, ez) - 1;
+    box[3] = Math.max(ox, ex) + 1; box[4] = Math.max(oy, ey) + 1; box[5] = Math.max(oz, ez) + 1;
+    const n = this.gather(box);
     const T = this.tris, N = this.norms;
     let best = maxT, found = false;
     for (let k = 0; k < n; k++) {

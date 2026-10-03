@@ -39,7 +39,7 @@ import * as K from './constants.js';
 import { Car } from './car.js';
 import { Ball } from './ball.js';
 import { getCollisionMesh } from './arena.js';
-import { Narrowphase } from './contacts.js';
+import { Narrowphase, makeRay } from './contacts.js';
 import { Solver } from './solver.js';
 
 const _d = new V3(), _vd = new V3(), _lp = new V3();
@@ -63,6 +63,7 @@ export class World {
     this.lastTouch = null;   // car
     this.touchHistory = [];  // recent touches { car, time }
     this.np = new Narrowphase(this.mesh, this);
+    this._ray = makeRay();
     this.solver = new Solver();
     // per-tick scratch (no allocation in the hot path)
     this._hits = [];          // cars whose extra ball impulse fired this tick
@@ -131,7 +132,9 @@ export class World {
    * triangles + planes), ball, other cars' boxes. dir must be unit length.
    */
   raycastWheel(from, dir, len, ignoreCar, out) {
-    return this.np.raycast(this, from.x, from.y, from.z, dir.x, dir.y, dir.z, len, ignoreCar, out);
+    const r = this._ray;
+    r.ox = from.x; r.oy = from.y; r.oz = from.z; r.dx = dir.x; r.dy = dir.y; r.dz = dir.z; r.len = len;
+    return this.np.raycast(this, r, ignoreCar, out);
   }
 
   step(dt = K.DT) {

@@ -123,6 +123,7 @@ export class Narrowphase {
     this.manifolds = [];
     this.nManifolds = 0;
     this._tmp = new ContactPoint();
+    this._box = new Float64Array(6);
   }
 
   begin() { this.nManifolds = 0; }
@@ -137,17 +138,17 @@ export class Narrowphase {
   _commit(m) { if (m.n > 0) this.nManifolds++; }
 
   /**
-   * btManifoldResult::addContactPoint in the manifold's frame: normal on B
-   * toward A, point on B, depth (< 0 penetrating). Fires the contact callback
+   * btManifoldResult::addContactPoint in the manifold's frame. The caller has
+   * written the candidate into this._tmp: normal nx..nz (on B, toward A),
+   * point on B bx..bz and depth dist (< 0 penetrating); doubles travel in
+   * fields, not arguments, so nothing is boxed. Fires the contact callback
    * and, for arena triangles, the internal-edge correction.
    */
-  _add(m, nx, ny, nz, bx, by, bz, depth, tri) {
+  _add(m, tri) {
+    const p = this._tmp, a = m.a, depth = p.dist;
     if (depth > m.threshold) return null;
-    const p = this._tmp, a = m.a;
     p.a = a; p.b = m.b; p.kind = m.kind;
-    p.nx = nx; p.ny = ny; p.nz = nz; p.dist = depth;
-    p.bx = bx; p.by = by; p.bz = bz;
-    p.ax = bx + nx * depth; p.ay = by + ny * depth; p.az = bz + nz * depth;
+    p.ax = p.bx + p.nx * depth; p.ay = p.by + p.ny * depth; p.az = p.bz + p.nz * depth;
     p.lax = p.ax - a.pos.x; p.lay = p.ay - a.pos.y; p.laz = p.az - a.pos.z;
     p.tri = tri; p.special = false;
     // default material combine (RocketSim btManifoldResult): with a static
@@ -177,16 +178,14 @@ export class Narrowphase {
   // ------------------------------------------------------------------ ball vs arena
   /** Ball vs the triangle mesh (one manifold) and each plane (one manifold each). */
   ballWorld(ball) {
-    const mesh = this.mesh, thr = BALL_CONTACT_THRESHOLD, r = ball.radius;
-    const c = ball.pos, e = r + BALL_AABB_EXTRA;
-    const x0 = c.x - e, y0 = c.y - e, z0 = c.z - e, x1 = c.x + e, y1 = c.y + e, z1 = c.z + e;
+    const mesh = this.mesh, thr = BALL_CONTACT_THRESHOLD, r = ball.radius, p = this._tmp;
+    const c = ball.pos, e = r + BALL_AABB_EXTRA, box = this._box;
+    box[0] = c.x - e; box[1] = c.y - e; box[2] = c.z - e; box[3] = c.x + e; box[4] = c.y + e; box[5] = c.z + e;
     const m = this._manifold(ball, null, KIND_BALL_WORLD, thr);
-    const n = mesh.overlapping(x0, y0, z0, x1, y1, z1);
+    const n = mesh.overlapping(box);
     for (let k = 0; k < n; k++) {
       const t = mesh.hits[k];
-      if (sphereTriangle(c.x, c.y, c.z, r, thr, mesh.tris, t * 9, _st)) {
-        this._add(m, _st.nx, _st.ny, _st.nz, _st.px, _st.py, _st.pz, _st.depth, t);
-      }
+      if (sphereTriangle(ball, mesh.tris, t * 9, p)) this._add(m, t);
     }
     this._commit(m);
     for (let i = 0; i < PLANES.length; i++) {
@@ -196,7 +195,8 @@ export class Narrowphase {
       const mp = this._manifold(ball, null, KIND_BALL_WORLD, thr);
       // support vertex c - n r, projected onto the plane
       const k = r + d;
-      this._add(mp, P.nx, P.ny, P.nz, c.x - P.nx * k, c.y - P.ny * k, c.z - P.nz * k, d, -1);
+      p.nx = P.nx; p.ny = P.ny; p.nz = P.nz; p.bx = c.x - P.nx * k; p.by = c.y - P.ny * k; p.bz = c.z - P.nz * k; p.dist = d;
+      this._add(mp, -1);
       this._commit(mp);
     }
   }
@@ -204,16 +204,17 @@ export class Narrowphase {
   // ------------------------------------------------------------------ car vs arena
   /** Car hitbox (btBoxShape with margin) vs the mesh (one manifold) and each plane. */
   carWorld(car) {
-    const mesh = this.mesh, thr = car.contactThreshold;
+    const mesh = this.mesh, thr = car.contactThreshold, p = this._tmp, box = this._box;
     boxFrame(car, _bx);
-    const h = car.half, mg = car.margin, R = car.R.e;
+    _bx.thr = thr;
+    const h = car.half, R = car.R.e;
     // btBoxShape::getAabb (btTransformAabb): |R| * (core + margin)
     const ex = Math.abs(R[0]) * h.x + Math.abs(R[1]) * h.y + Math.abs(R[2]) * h.z;
     const ey = Math.abs(R[3]) * h.x + Math.abs(R[4]) * h.y + Math.abs(R[5]) * h.z;
     const ez = Math.abs(R[6]) * h.x + Math.abs(R[7]) * h.y + Math.abs(R[8]) * h.z;
-    const x0 = _bx.cx - ex, y0 = _bx.cy - ey, z0 = _bx.cz - ez, x1 = _bx.cx + ex, y1 = _bx.cy + ey, z1 = _bx.cz + ez;
+    box[0] = _bx.cx - ex; box[1] = _bx.cy - ey; box[2] = _bx.cz - ez; box[3] = _bx.cx + ex; box[4] = _bx.cy + ey; box[5] = _bx.cz + ez;
     const m = this._manifold(car, null, KIND_CAR_WORLD, thr);
-    const n = mesh.overlapping(x0, y0, z0, x1, y1, z1);
+    const n = mesh.overlapping(box);
     const T = mesh.tris, N = mesh.norms;
     for (let k = 0; k < n; k++) {
       const t = mesh.hits[k];
@@ -223,9 +224,7 @@ export class Narrowphase {
       const rad = h.x * Math.abs(tnx * R[0] + tny * R[3] + tnz * R[6]) + h.y * Math.abs(tnx * R[1] + tny * R[4] + tnz * R[7]) + h.z * Math.abs(tnx * R[2] + tny * R[5] + tnz * R[8]);
       const sd = tnx * (_bx.cx - T[o]) + tny * (_bx.cy - T[o + 1]) + tnz * (_bx.cz - T[o + 2]);
       if (sd - rad > thr || -sd - rad > thr) continue;
-      if (boxTriangle(_bx, R, mg, T, o, tnx, tny, tnz, thr, _st)) {
-        this._add(m, _st.nx, _st.ny, _st.nz, _st.px, _st.py, _st.pz, _st.depth, t);
-      }
+      if (boxTriangle(_bx, R, T, N, t, p)) this._add(m, t);
     }
     this._commit(m);
     for (let i = 0; i < PLANES.length; i++) {
@@ -239,7 +238,8 @@ export class Narrowphase {
       const d = P.nx * (vx - P.px) + P.ny * (vy - P.py) + P.nz * (vz - P.pz);
       if (d >= thr) continue;
       const mp = this._manifold(car, null, KIND_CAR_WORLD, thr);
-      this._add(mp, P.nx, P.ny, P.nz, vx - P.nx * d, vy - P.ny * d, vz - P.nz * d, d, -1);
+      p.nx = P.nx; p.ny = P.ny; p.nz = P.nz; p.bx = vx - P.nx * d; p.by = vy - P.ny * d; p.bz = vz - P.nz * d; p.dist = d;
+      this._add(mp, -1);
       this._commit(mp);
     }
   }
@@ -273,18 +273,24 @@ export class Narrowphase {
       nx /= dist; ny /= dist; nz /= dist;
     }
     const px = qx + nx * mg, py = qy + ny * mg, pz = qz + nz * mg;
-    const depth = dist - inter;
-    const wnx = R[0] * nx + R[1] * ny + R[2] * nz, wny = R[3] * nx + R[4] * ny + R[5] * nz, wnz = R[6] * nx + R[7] * ny + R[8] * nz;
-    const wpx = _bx.cx + R[0] * px + R[1] * py + R[2] * pz, wpy = _bx.cy + R[3] * px + R[4] * py + R[5] * pz, wpz = _bx.cz + R[6] * px + R[7] * py + R[8] * pz;
+    const p = this._tmp;
+    p.dist = dist - inter;
+    p.nx = R[0] * nx + R[1] * ny + R[2] * nz; p.ny = R[3] * nx + R[4] * ny + R[5] * nz; p.nz = R[6] * nx + R[7] * ny + R[8] * nz;
+    p.bx = _bx.cx + R[0] * px + R[1] * py + R[2] * pz; p.by = _bx.cy + R[3] * px + R[4] * py + R[5] * pz; p.bz = _bx.cz + R[6] * px + R[7] * py + R[8] * pz;
     const m = this._manifold(ball, car, KIND_CAR_BALL, thr);
-    this._add(m, wnx, wny, wnz, wpx, wpy, wpz, depth, -1);
+    this._add(m, -1);
     this._commit(m);
   }
 
   // ------------------------------------------------------------------ car vs car
-  /** btBoxBoxDetector (dBoxBox2, maxc 4) on the full hitboxes. A = carA, B = carB. */
+  /**
+   * btBoxBoxDetector (dBoxBox2, maxc 4) on the hitboxes (half extents with
+   * margin). A = carA, B = carB. Skipped unless the broadphase AABBs (each
+   * grown by gContactBreakingThreshold, 0.02 bt) overlap.
+   */
   carCar(carA, carB) {
     boxFrame(carA, _bx); boxFrame(carB, _by);
+    if (!aabbsOverlap(_bx, carA, _by, carB, BROADPHASE_AABB_EXTRA)) return;
     const m = this._manifold(carA, carB, KIND_CAR_CAR, Math.min(carA.contactThreshold, carB.contactThreshold));
     boxBox(this, m, _bx, carA.R.e, carA.half, _by, carB.R.e, carB.half);
     this._commit(m);
@@ -296,42 +302,44 @@ export class Narrowphase {
    * arena (two-sided triangles + planes), the ball and every car except
    * `ignore` (btDefaultVehicleRaycaster: ClosestRayResultCallback, then no hit
    * if that body has no contact response, i.e. a demolished car).
-   * world: { ball, cars }. Fills `out` and returns true on a hit.
+   * world: { ball, cars }; ray: makeRay() with origin ox..oz, unit direction
+   * dx..dz and length len. Fills `out` and returns true on a hit.
    */
-  raycast(world, fx, fy, fz, dx, dy, dz, len, ignore, out) {
-    let best = len, type = -1, body = null;
+  raycast(world, ray, ignore, out) {
+    ray.best = ray.len;
+    let type = -1, body = null;
     // triangles
-    if (this.mesh.raycast(fx, fy, fz, dx, dy, dz, len, _rh, true)) {
-      best = _rh.t; type = HIT_STATIC; out.nx = _rh.nx; out.ny = _rh.ny; out.nz = _rh.nz;
+    if (this.mesh.raycast(ray, _rh, true)) {
+      ray.best = _rh.t; type = HIT_STATIC; out.nx = _rh.nx; out.ny = _rh.ny; out.nz = _rh.nz;
     }
     // planes (two-sided, normal toward the ray origin)
+    const fx = ray.ox, fy = ray.oy, fz = ray.oz, dx = ray.dx, dy = ray.dy, dz = ray.dz;
     for (let i = 0; i < PLANES.length; i++) {
       const P = PLANES[i];
       const den = P.nx * dx + P.ny * dy + P.nz * dz;
       if (Math.abs(den) < 1e-12) continue;
       const t = (P.nx * (P.px - fx) + P.ny * (P.py - fy) + P.nz * (P.pz - fz)) / den;
-      if (t < 0 || t >= best) continue;
-      best = t; type = HIT_STATIC;
+      if (t < 0 || t >= ray.best) continue;
+      ray.best = t; type = HIT_STATIC;
       const s = den < 0 ? 1 : -1;
       out.nx = P.nx * s; out.ny = P.ny * s; out.nz = P.nz * s;
     }
     // ball
     const ball = world.ball;
-    if (ball && !ball.frozen) {
-      const t = raySphere(fx, fy, fz, dx, dy, dz, ball.pos, ball.radius, best, _rn);
-      if (t >= 0) { best = t; type = HIT_BALL; body = ball; out.nx = _rn[0]; out.ny = _rn[1]; out.nz = _rn[2]; }
+    if (ball && !ball.frozen && raySphere(ray, ball)) {
+      type = HIT_BALL; body = ball; out.nx = _rn[0]; out.ny = _rn[1]; out.nz = _rn[2];
     }
-    // cars (full hitbox)
+    // cars (hitbox)
     const cars = world.cars;
     for (let i = 0; i < cars.length; i++) {
       const c = cars[i];
       if (c === ignore || !c.inWorld) continue;
-      const t = rayBox(fx, fy, fz, dx, dy, dz, c, best, _rn);
-      if (t >= 0) { best = t; type = HIT_CAR; body = c; out.nx = _rn[0]; out.ny = _rn[1]; out.nz = _rn[2]; }
+      if (rayBox(ray, c)) { type = HIT_CAR; body = c; out.nx = _rn[0]; out.ny = _rn[1]; out.nz = _rn[2]; }
     }
     if (type < 0) return false;
     if (type === HIT_CAR && body.isDemoed) return false;
-    out.t = best; out.fraction = best / len;
+    const best = ray.best;
+    out.t = best; out.fraction = best / ray.len;
     out.px = fx + dx * best; out.py = fy + dy * best; out.pz = fz + dz * best;
     out.type = type; out.body = body;
     if (body) {
@@ -342,8 +350,13 @@ export class Narrowphase {
   }
 }
 
+/** Scratch ray for Narrowphase.raycast / CollisionMesh.raycast (fields start as doubles). */
+export function makeRay() {
+  return { ox: 0.5, oy: 0.5, oz: 0.5, dx: 0.5, dy: 0.5, dz: 0.5, len: 0.5, best: 0.5 };
+}
+
 export function makeRayHit() {
-  return { t: 0, fraction: 0, px: 0, py: 0, pz: 0, nx: 0, ny: 0, nz: 1, type: -1, body: null, vx: 0, vy: 0, vz: 0 };
+  return { t: 0.5, fraction: 0.5, px: 0.5, py: 0.5, pz: 0.5, nx: 0.5, ny: 0.5, nz: 0.5, type: -1, body: null, vx: 0.5, vy: 0.5, vz: 0.5 };
 }
 
 // p.vn = approach speed of A toward B along the normal at the point (> 0 closing).
@@ -357,25 +370,48 @@ function setApproachSpeed(a, b, p) {
   p.vn = -(p.nx * vx + p.ny * vy + p.nz * vz);
 }
 
-// Car hitbox frame: centre (pos + R offset) and core half extents (half - margin).
-const _bx = { cx: 0, cy: 0, cz: 0, ex: 0, ey: 0, ez: 0 };
-const _by = { cx: 0, cy: 0, cz: 0, ex: 0, ey: 0, ez: 0 };
+// Car hitbox frame: centre (pos + R offset), core half extents (half -
+// margin), margin mg; thr is set by the caller that needs it.
+const _bx = { cx: 0.5, cy: 0.5, cz: 0.5, ex: 0.5, ey: 0.5, ez: 0.5, mg: 0.5, thr: 0.5 };
+const _by = { cx: 0.5, cy: 0.5, cz: 0.5, ex: 0.5, ey: 0.5, ez: 0.5, mg: 0.5, thr: 0.5 };
 function boxFrame(car, out) {
   const R = car.R.e, o = car.hbOffset, p = car.pos;
   out.cx = p.x + R[0] * o.x + R[1] * o.y + R[2] * o.z;
   out.cy = p.y + R[3] * o.x + R[4] * o.y + R[5] * o.z;
   out.cz = p.z + R[6] * o.x + R[7] * o.y + R[8] * o.z;
   out.ex = car.half.x - car.margin; out.ey = car.half.y - car.margin; out.ez = car.half.z - car.margin;
+  out.mg = car.margin;
   return out;
+}
+
+// btCollisionWorld::updateSingleAabb grows every broadphase AABB by
+// gContactBreakingThreshold (0.02 bt).
+const BROADPHASE_AABB_EXTRA = 0.02 * 50;
+// Broadphase test of two car boxes (frames from boxFrame).
+function aabbsOverlap(fa, ca, fb, cb, extra) {
+  const Ra = ca.R.e, ha = ca.half, Rb = cb.R.e, hb = cb.half;
+  const ax = Math.abs(Ra[0]) * ha.x + Math.abs(Ra[1]) * ha.y + Math.abs(Ra[2]) * ha.z + extra;
+  const bx = Math.abs(Rb[0]) * hb.x + Math.abs(Rb[1]) * hb.y + Math.abs(Rb[2]) * hb.z + extra;
+  if (Math.abs(fa.cx - fb.cx) > ax + bx) return false;
+  const ay = Math.abs(Ra[3]) * ha.x + Math.abs(Ra[4]) * ha.y + Math.abs(Ra[5]) * ha.z + extra;
+  const by = Math.abs(Rb[3]) * hb.x + Math.abs(Rb[4]) * hb.y + Math.abs(Rb[5]) * hb.z + extra;
+  if (Math.abs(fa.cy - fb.cy) > ay + by) return false;
+  const az = Math.abs(Ra[6]) * ha.x + Math.abs(Ra[7]) * ha.y + Math.abs(Ra[8]) * ha.z + extra;
+  const bz = Math.abs(Rb[6]) * hb.x + Math.abs(Rb[7]) * hb.y + Math.abs(Rb[8]) * hb.z + extra;
+  return Math.abs(fa.cz - fb.cz) <= az + bz;
 }
 
 // ---------------------------------------------------------------------------
 // Sphere vs triangle (SphereTriangleDetector::collide, RocketSim version)
 // ---------------------------------------------------------------------------
-const _st = { nx: 0, ny: 0, nz: 0, px: 0, py: 0, pz: 0, depth: 0 };
-const _cp = new Float64Array(3);
+// Helpers below take points as small Float64Arrays rather than as separate
+// numbers: a double passed to (or returned from) a function V8 does not
+// inline is boxed into a new heap object, and these run per triangle.
+const _cp = new Float64Array(3), _p3 = new Float64Array(3);
 
-function sphereTriangle(cx, cy, cz, r, thr, T, o, out) {
+/** Ball vs triangle T[o..o+8]: writes normal, point on the triangle (bx..) and dist into out. */
+function sphereTriangle(ball, T, o, out) {
+  const c = ball.pos, cx = c.x, cy = c.y, cz = c.z, r = ball.radius, thr = BALL_CONTACT_THRESHOLD;
   const ax = T[o], ay = T[o + 1], az = T[o + 2];
   const e1x = T[o + 3] - ax, e1y = T[o + 4] - ay, e1z = T[o + 5] - az;
   const e2x = T[o + 6] - ax, e2y = T[o + 7] - ay, e2z = T[o + 8] - az;
@@ -398,7 +434,8 @@ function sphereTriangle(cx, cy, cz, r, thr, T, o, out) {
   if (alpha >= 0 && alpha <= 1 && beta >= 0 && beta <= 1 && gamma >= 0 && gamma <= 1) {
     px = cx - nx * dp; py = cy - ny * dp; pz = cz - nz * dp;
   } else {
-    closestPtTri(cx, cy, cz, T, o, _cp);
+    _p3[0] = cx; _p3[1] = cy; _p3[2] = cz;
+    closestPtTri(_p3, T, o, _cp);
     const qx = cx - _cp[0], qy = cy - _cp[1], qz = cz - _cp[2];
     if (qx * qx + qy * qy + qz * qz >= rt * rt) return false;
     px = _cp[0]; py = _cp[1]; pz = _cp[2];
@@ -407,22 +444,21 @@ function sphereTriangle(cx, cy, cz, r, thr, T, o, out) {
   if (d2 >= rt * rt) return false;
   if (d2 > EPS2_UU) {
     const d = Math.sqrt(d2);
-    out.nx = qx / d; out.ny = qy / d; out.nz = qz / d; out.depth = d - r;
+    out.nx = qx / d; out.ny = qy / d; out.nz = qz / d; out.dist = d - r;
   } else {
-    out.nx = nx; out.ny = ny; out.nz = nz; out.depth = -r;
+    out.nx = nx; out.ny = ny; out.nz = nz; out.dist = -r;
   }
-  out.px = px; out.py = py; out.pz = pz;
+  out.bx = px; out.by = py; out.bz = pz;
   return true;
 }
 
-// Ericson, Real-Time Collision Detection 5.1.5 (same as RocketSim's closestPointTriangle)
-function closestPtTri(px, py, pz, T, o, out) {
-  const ax = T[o], ay = T[o + 1], az = T[o + 2];
-  const bx = T[o + 3], by = T[o + 4], bz = T[o + 5];
-  const cx = T[o + 6], cy = T[o + 7], cz = T[o + 8];
-  return closestPtTriV(px, py, pz, ax, ay, az, bx, by, bz, cx, cy, cz, out);
-}
-function closestPtTriV(px, py, pz, ax, ay, az, bx, by, bz, cx, cy, cz, out) {
+// Closest point to P (array of 3) on the triangle V[o..o+8] (Ericson,
+// Real-Time Collision Detection 5.1.5; same as RocketSim's closestPointTriangle).
+function closestPtTri(P, V, o, out) {
+  const px = P[0], py = P[1], pz = P[2];
+  const ax = V[o], ay = V[o + 1], az = V[o + 2];
+  const bx = V[o + 3], by = V[o + 4], bz = V[o + 5];
+  const cx = V[o + 6], cy = V[o + 7], cz = V[o + 8];
   const abx = bx - ax, aby = by - ay, abz = bz - az;
   const acx = cx - ax, acy = cy - ay, acz = cz - az;
   const apx = px - ax, apy = py - ay, apz = pz - az;
@@ -459,7 +495,7 @@ function closestPtTriV(px, py, pz, ax, ay, az, bx, by, bz, cx, cy, cz, out) {
 // ---------------------------------------------------------------------------
 // Triangle in box space, scratch
 const _tl = new Float64Array(9);
-const _q = new Float64Array(3), _sa = new Float64Array(3), _sb = new Float64Array(3);
+const _q = new Float64Array(3), _seg = new Float64Array(6);
 // 12 edges of the box as (axis, sign a, sign b): along `axis`, the other two coords at +-extent
 const BOX_EDGES = new Int8Array([
   0, -1, -1, 0, 1, -1, 0, -1, 1, 0, 1, 1,
@@ -468,20 +504,25 @@ const BOX_EDGES = new Int8Array([
 ]);
 const _ext = new Float64Array(3);
 // running minimum of closest-feature candidates (ties within tol averaged)
-const _cf = { best: 0, cnt: 0, sAx: 0, sAy: 0, sAz: 0, sBx: 0, sBy: 0, sBz: 0 };
-function consider(c, d2, ax, ay, az, bx, by, bz) {
-  if (d2 < c.best - 1e-6) { c.best = d2; c.cnt = 1; c.sAx = ax; c.sAy = ay; c.sAz = az; c.sBx = bx; c.sBy = by; c.sBz = bz; }
-  else if (d2 <= c.best + 1e-6) { c.cnt++; c.sAx += ax; c.sAy += ay; c.sAz += az; c.sBx += bx; c.sBy += by; c.sBz += bz; }
+// candidate: v = [squared distance, point on box (3), point on triangle (3)]
+const _cf = { best: 0.5, cnt: 0, sAx: 0.5, sAy: 0.5, sAz: 0.5, sBx: 0.5, sBy: 0.5, sBz: 0.5 };
+const _cv = new Float64Array(7);
+function consider(c, v) {
+  const d2 = v[0];
+  if (d2 < c.best - 1e-6) { c.best = d2; c.cnt = 1; c.sAx = v[1]; c.sAy = v[2]; c.sAz = v[3]; c.sBx = v[4]; c.sBy = v[5]; c.sBz = v[6]; }
+  else if (d2 <= c.best + 1e-6) { c.cnt++; c.sAx += v[1]; c.sAy += v[2]; c.sAz += v[3]; c.sBx += v[4]; c.sBy += v[5]; c.sBz += v[6]; }
 }
 
 /**
- * Contact between a box (centre/core half extents in bx, rotation R, margin
- * mg) and a triangle (T[o..o+8], unit normal tn). Writes normal (triangle ->
- * box), the point on the triangle and the distance (rounded box surface to
- * triangle) into out. False if farther than thr.
+ * Contact between a box (bx: centre, core half extents, margin mg, threshold
+ * thr; rotation R) and triangle t (vertices T, unit normals N). Writes the
+ * normal (triangle -> box), the point on the triangle (bx..bz) and the
+ * distance from the rounded box surface (dist) into out. False if farther
+ * than thr.
  */
-function boxTriangle(bx, R, mg, T, o, tnx, tny, tnz, thr, out) {
-  const e0 = bx.ex, e1 = bx.ey, e2 = bx.ez;
+function boxTriangle(bx, R, T, N, t, out) {
+  const e0 = bx.ex, e1 = bx.ey, e2 = bx.ez, mg = bx.mg, thr = bx.thr, o = t * 9;
+  const tnx = N[t * 3], tny = N[t * 3 + 1], tnz = N[t * 3 + 2];
   // triangle into box space
   for (let k = 0; k < 3; k++) {
     const x = T[o + k * 3] - bx.cx, y = T[o + k * 3 + 1] - bx.cy, z = T[o + k * 3 + 2] - bx.cz;
@@ -523,28 +564,34 @@ function boxTriangle(bx, R, mg, T, o, tnx, tny, tnz, thr, out) {
     // ---- exact closest features (what GJK converges to); ties averaged
     _cf.best = Infinity; _cf.cnt = 0;
     // triangle vertices vs box
+    const cv = _cv;
     for (let k = 0; k < 3; k++) {
       const x = _tl[k * 3], y = _tl[k * 3 + 1], z = _tl[k * 3 + 2];
       const qx = x < -e0 ? -e0 : x > e0 ? e0 : x, qy = y < -e1 ? -e1 : y > e1 ? e1 : y, qz = z < -e2 ? -e2 : z > e2 ? e2 : z;
-      consider(_cf, (x - qx) * (x - qx) + (y - qy) * (y - qy) + (z - qz) * (z - qz), qx, qy, qz, x, y, z);
+      cv[0] = (x - qx) * (x - qx) + (y - qy) * (y - qy) + (z - qz) * (z - qz);
+      cv[1] = qx; cv[2] = qy; cv[3] = qz; cv[4] = x; cv[5] = y; cv[6] = z;
+      consider(_cf, cv);
     }
     // box vertices vs triangle
     for (let v = 0; v < 8; v++) {
       const x = v & 1 ? e0 : -e0, y = v & 2 ? e1 : -e1, z = v & 4 ? e2 : -e2;
-      closestPtTriV(x, y, z, _tl[0], _tl[1], _tl[2], _tl[3], _tl[4], _tl[5], _tl[6], _tl[7], _tl[8], _q);
-      consider(_cf, (x - _q[0]) * (x - _q[0]) + (y - _q[1]) * (y - _q[1]) + (z - _q[2]) * (z - _q[2]), x, y, z, _q[0], _q[1], _q[2]);
+      _p3[0] = x; _p3[1] = y; _p3[2] = z;
+      closestPtTri(_p3, _tl, 0, _q);
+      cv[0] = (x - _q[0]) * (x - _q[0]) + (y - _q[1]) * (y - _q[1]) + (z - _q[2]) * (z - _q[2]);
+      cv[1] = x; cv[2] = y; cv[3] = z; cv[4] = _q[0]; cv[5] = _q[1]; cv[6] = _q[2];
+      consider(_cf, cv);
     }
     // box edges vs triangle edges
     const ext = _ext; ext[0] = e0; ext[1] = e1; ext[2] = e2;
     for (let b = 0; b < 12; b++) {
       const ax = BOX_EDGES[b * 3], s1 = BOX_EDGES[b * 3 + 1], s2 = BOX_EDGES[b * 3 + 2];
       const a1 = (ax + 1) % 3, a2 = (ax + 2) % 3;
-      _sa[ax] = -ext[ax]; _sa[a1] = s1 * ext[a1]; _sa[a2] = s2 * ext[a2];
-      _sb[ax] = ext[ax]; _sb[a1] = _sa[a1]; _sb[a2] = _sa[a2];
+      _seg[ax] = -ext[ax]; _seg[a1] = s1 * ext[a1]; _seg[a2] = s2 * ext[a2];
+      _seg[3 + ax] = ext[ax]; _seg[3 + a1] = _seg[a1]; _seg[3 + a2] = _seg[a2];
       for (let k = 0; k < 3; k++) {
-        const p = k * 3, q = ((k + 1) % 3) * 3;
-        segSeg(_sa[0], _sa[1], _sa[2], _sb[0], _sb[1], _sb[2], _tl[p], _tl[p + 1], _tl[p + 2], _tl[q], _tl[q + 1], _tl[q + 2], _ss);
-        consider(_cf, _ss[6], _ss[0], _ss[1], _ss[2], _ss[3], _ss[4], _ss[5]);
+        segSeg(_seg, _tl, k * 3, ((k + 1) % 3) * 3, _ss);
+        cv[0] = _ss[6]; cv[1] = _ss[0]; cv[2] = _ss[1]; cv[3] = _ss[2]; cv[4] = _ss[3]; cv[5] = _ss[4]; cv[6] = _ss[5];
+        consider(_cf, cv);
       }
     }
     const k = 1 / _cf.cnt;
@@ -574,27 +621,27 @@ function boxTriangle(bx, R, mg, T, o, tnx, tny, tnz, thr, out) {
       // edge-edge: box edge along axis bestI at the support corner (-n), triangle edge bestJ
       const ext = _ext; ext[0] = e0; ext[1] = e1; ext[2] = e2;
       const cx = nx >= 0 ? -e0 : e0, cy = ny >= 0 ? -e1 : e1, cz = nz >= 0 ? -e2 : e2;
-      _sa[0] = cx; _sa[1] = cy; _sa[2] = cz; _sb[0] = cx; _sb[1] = cy; _sb[2] = cz;
-      _sa[bestI] = -ext[bestI]; _sb[bestI] = ext[bestI];
-      const p = bestJ * 3, q = ((bestJ + 1) % 3) * 3;
-      segSeg(_sa[0], _sa[1], _sa[2], _sb[0], _sb[1], _sb[2], _tl[p], _tl[p + 1], _tl[p + 2], _tl[q], _tl[q + 1], _tl[q + 2], _ss);
+      _seg[0] = cx; _seg[1] = cy; _seg[2] = cz; _seg[3] = cx; _seg[4] = cy; _seg[5] = cz;
+      _seg[bestI] = -ext[bestI]; _seg[3 + bestI] = ext[bestI];
+      segSeg(_seg, _tl, bestJ * 3, ((bestJ + 1) % 3) * 3, _ss);
       pbx = _ss[3]; pby = _ss[4]; pbz = _ss[5];
     }
   }
   // back to world
   out.nx = R[0] * nx + R[1] * ny + R[2] * nz; out.ny = R[3] * nx + R[4] * ny + R[5] * nz; out.nz = R[6] * nx + R[7] * ny + R[8] * nz;
-  out.px = bx.cx + R[0] * pbx + R[1] * pby + R[2] * pbz;
-  out.py = bx.cy + R[3] * pbx + R[4] * pby + R[5] * pbz;
-  out.pz = bx.cz + R[6] * pbx + R[7] * pby + R[8] * pbz;
-  out.depth = dist;
+  out.bx = bx.cx + R[0] * pbx + R[1] * pby + R[2] * pbz;
+  out.by = bx.cy + R[3] * pbx + R[4] * pby + R[5] * pbz;
+  out.bz = bx.cz + R[6] * pbx + R[7] * pby + R[8] * pbz;
+  out.dist = dist;
   return true;
 }
 
-// Closest points between segments p1-q1 and p2-q2 (Ericson 5.1.9).
-// out = [c1x, c1y, c1z, c2x, c2y, c2z, squared distance] (no double return:
-// a non-inlined call would box it).
+// Closest points between segments S[0..2]-S[3..5] and V[p..p+2]-V[q..q+2]
+// (Ericson 5.1.9). out = [c1x, c1y, c1z, c2x, c2y, c2z, squared distance].
 const _ss = new Float64Array(7);
-function segSeg(p1x, p1y, p1z, q1x, q1y, q1z, p2x, p2y, p2z, q2x, q2y, q2z, out) {
+function segSeg(S, V, p, q, out) {
+  const p1x = S[0], p1y = S[1], p1z = S[2], q1x = S[3], q1y = S[4], q1z = S[5];
+  const p2x = V[p], p2y = V[p + 1], p2z = V[p + 2], q2x = V[q], q2y = V[q + 1], q2z = V[q + 2];
   const d1x = q1x - p1x, d1y = q1y - p1y, d1z = q1z - p1z;
   const d2x = q2x - p2x, d2y = q2y - p2y, d2z = q2z - p2z;
   const rx = p1x - p2x, ry = p1y - p2y, rz = p1z - p2z;
@@ -623,81 +670,95 @@ function segSeg(p1x, p1y, p1z, q1x, q1y, q1z, p2x, p2y, p2z, q2x, q2y, q2z, out)
 // btAdjustInternalEdgeContacts (default flags: front facing, single sided)
 // ---------------------------------------------------------------------------
 const _ev = new Float64Array(9);
-function nearestOnSeg(px, py, pz, ax, ay, az, bx, by, bz, out) {
-  const dx = bx - ax, dy = by - ay, dz = bz - az, l2 = dx * dx + dy * dy + dz * dz;
-  if (l2 < EPS2_UU) { out[0] = ax; out[1] = ay; out[2] = az; return; }
-  let t = ((px - ax) * dx + (py - ay) * dy + (pz - az) * dz) / l2;
-  if (t < 0) t = 0; else if (t > 1) t = 1;
+// squared distance from P to the segment V[a..a+2]-V[b..b+2] (closest point in out)
+function nearestOnSeg(P, V, a, b, out) {
+  const ax = V[a], ay = V[a + 1], az = V[a + 2];
+  const dx = V[b] - ax, dy = V[b + 1] - ay, dz = V[b + 2] - az, l2 = dx * dx + dy * dy + dz * dz;
+  let t = 0;
+  if (l2 >= EPS2_UU) {
+    t = ((P[0] - ax) * dx + (P[1] - ay) * dy + (P[2] - az) * dz) / l2;
+    if (t < 0) t = 0; else if (t > 1) t = 1;
+  }
   out[0] = ax + dx * t; out[1] = ay + dy * t; out[2] = az + dz * t;
+  const ex = P[0] - out[0], ey = P[1] - out[1], ez = P[2] - out[2];
+  out[3] = ex * ex + ey * ey + ez * ez;
 }
-// rotate v about (unnormalised) axis by angle a
-function rotAxis(axx, axy, axz, a, vx, vy, vz, out) {
-  const l = Math.sqrt(axx * axx + axy * axy + axz * axz);
-  const ux = axx / l, uy = axy / l, uz = axz / l, c = Math.cos(a), s = Math.sin(a), d = ux * vx + uy * vy + uz * vz;
+// rotate v (array of 3) about the (unnormalised) axis A[0..2] by angle A[3]
+function rotAxis(A, v, out) {
+  const l = Math.sqrt(A[0] * A[0] + A[1] * A[1] + A[2] * A[2]), a = A[3];
+  const ux = A[0] / l, uy = A[1] / l, uz = A[2] / l, c = Math.cos(a), s = Math.sin(a);
+  const vx = v[0], vy = v[1], vz = v[2], d = ux * vx + uy * vy + uz * vz;
   out[0] = vx * c + (uy * vz - uz * vy) * s + ux * d * (1 - c);
   out[1] = vy * c + (uz * vx - ux * vz) * s + uy * d * (1 - c);
   out[2] = vz * c + (ux * vy - uy * vx) * s + uz * d * (1 - c);
 }
-const _nr = new Float64Array(3), _cl = new Float64Array(3);
-// btClampNormal: returns true and writes _cl if the normal was clamped
-function clampNormal(ex, ey, ez, tnx, tny, tnz, cnx, cny, cnz, corrected) {
+const _nr = new Float64Array(4), _cl = new Float64Array(3), _ax = new Float64Array(4), _tn = new Float64Array(3), _cn = new Float64Array(3);
+// btClampNormal for edge E (_ax[0..2], corrected angle _ax[3]), triangle normal
+// _tn and contact normal _cn: returns true and writes _cl if it was clamped
+function clampNormal() {
+  const ex = _ax[0], ey = _ax[1], ez = _ax[2], corrected = _ax[3];
+  const tnx = _tn[0], tny = _tn[1], tnz = _tn[2], cnx = _cn[0], cny = _cn[1], cnz = _cn[2];
   // edgeCross = edge x tri_normal, normalised
   let ecx = ey * tnz - ez * tny, ecy = ez * tnx - ex * tnz, ecz = ex * tny - ey * tnx;
   const l = Math.sqrt(ecx * ecx + ecy * ecy + ecz * ecz); ecx /= l; ecy /= l; ecz /= l;
   const cur = Math.atan2(cnx * ecx + cny * ecy + cnz * ecz, cnx * tnx + cny * tny + cnz * tnz);
   if ((corrected < 0 && cur < corrected) || (corrected >= 0 && cur > corrected)) {
-    rotAxis(ex, ey, ez, corrected - cur, cnx, cny, cnz, _cl);
+    _ax[3] = corrected - cur;
+    rotAxis(_ax, _cn, _cl);
     return true;
   }
   return false;
 }
 
 function adjustInternalEdgeContact(pt, mesh, t) {
-  const T = mesh.tris, o = t * 9;
-  for (let k = 0; k < 9; k++) _ev[k] = T[o + k];
-  const v0x = _ev[0], v0y = _ev[1], v0z = _ev[2], v1x = _ev[3], v1y = _ev[4], v1z = _ev[5], v2x = _ev[6], v2y = _ev[7], v2z = _ev[8];
+  const T = mesh.tris, o = t * 9, V = _ev;
+  for (let k = 0; k < 9; k++) V[k] = T[o + k];
   const tnx = mesh.norms[t * 3], tny = mesh.norms[t * 3 + 1], tnz = mesh.norms[t * 3 + 2];
   const ang = mesh.edgeAngle, fl = mesh.edgeFlags[t];
   const a01 = ang[t * 3], a12 = ang[t * 3 + 1], a20 = ang[t * 3 + 2];
-  const px = pt.bx, py = pt.by, pz = pt.bz; // contact = localPointB (mesh at the origin)
+  _p3[0] = pt.bx; _p3[1] = pt.by; _p3[2] = pt.bz; // contact = localPointB (mesh at the origin)
   let cnx = pt.nx, cny = pt.ny, cnz = pt.nz;
   { const l = Math.sqrt(cnx * cnx + cny * cny + cnz * cnz); cnx /= l; cny /= l; cnz /= l; }
   const MAX_ANGLE = NO_EDGE; // m_maxEdgeAngleThreshold = SIMD_2_PI
-  // closest valid edge
-  let best = -1, bestD = Infinity;
-  if (Math.abs(a01) < MAX_ANGLE) { nearestOnSeg(px, py, pz, v0x, v0y, v0z, v1x, v1y, v1z, _nr); const d = Math.hypot(px - _nr[0], py - _nr[1], pz - _nr[2]); if (d < bestD) { best = 0; bestD = d; } }
-  if (Math.abs(a12) < MAX_ANGLE) { nearestOnSeg(px, py, pz, v1x, v1y, v1z, v2x, v2y, v2z, _nr); const d = Math.hypot(px - _nr[0], py - _nr[1], pz - _nr[2]); if (d < bestD) { best = 1; bestD = d; } }
-  if (Math.abs(a20) < MAX_ANGLE) { nearestOnSeg(px, py, pz, v2x, v2y, v2z, v0x, v0y, v0z, _nr); const d = Math.hypot(px - _nr[0], py - _nr[1], pz - _nr[2]); if (d < bestD) { best = 2; bestD = d; } }
-  if (best < 0 || bestD >= EDGE_DIST_THRESHOLD) return;
+  // closest valid edge (squared distances compare the same way)
+  let best = -1, bestD2 = Infinity;
+  if (Math.abs(a01) < MAX_ANGLE) { nearestOnSeg(_p3, V, 0, 3, _nr); if (_nr[3] < bestD2) { best = 0; bestD2 = _nr[3]; } }
+  if (Math.abs(a12) < MAX_ANGLE) { nearestOnSeg(_p3, V, 3, 6, _nr); if (_nr[3] < bestD2) { best = 1; bestD2 = _nr[3]; } }
+  if (Math.abs(a20) < MAX_ANGLE) { nearestOnSeg(_p3, V, 6, 0, _nr); if (_nr[3] < bestD2) { best = 2; bestD2 = _nr[3]; } }
+  if (best < 0 || bestD2 >= EDGE_DIST_THRESHOLD * EDGE_DIST_THRESHOLD) return;
   const angle = best === 0 ? a01 : best === 1 ? a12 : a20;
   let concave = 0;
   if (angle === 0) concave = 1;
   else {
-    let ex, ey, ez;
-    if (best === 0) { ex = v0x - v1x; ey = v0y - v1y; ez = v0z - v1z; }
-    else if (best === 1) { ex = v1x - v2x; ey = v1y - v2y; ez = v1z - v2z; }
-    else { ex = v2x - v0x; ey = v2y - v0y; ez = v2z - v0z; }
+    // edge vector (v0 - v1, v1 - v2 or v2 - v0) and its corrected angle
+    const i0 = best * 3, i1 = ((best + 1) % 3) * 3;
+    _ax[0] = V[i0] - V[i1]; _ax[1] = V[i0 + 1] - V[i1 + 1]; _ax[2] = V[i0 + 2] - V[i1 + 2]; _ax[3] = angle;
     const convex = (fl & (best === 0 ? TRI_V0V1_CONVEX : best === 1 ? TRI_V1V2_CONVEX : TRI_V2V0_CONVEX)) !== 0;
     const swap = (fl & (best === 0 ? TRI_V0V1_SWAP : best === 1 ? TRI_V1V2_SWAP : TRI_V2V0_SWAP)) !== 0;
     const sf = convex ? 1 : -1;
     const nAx = sf * tnx, nAy = sf * tny, nAz = sf * tnz;
-    rotAxis(ex, ey, ez, angle, tnx, tny, tnz, _nr);
+    _tn[0] = tnx; _tn[1] = tny; _tn[2] = tnz;
+    rotAxis(_ax, _tn, _nr);
     const sb = swap ? -sf : sf;
     const nBx = sb * _nr[0], nBy = sb * _nr[1], nBz = sb * _nr[2];
     const dA = cnx * nAx + cny * nAy + cnz * nAz, dB = cnx * nBx + cny * nBy + cnz * nBz;
     if (dA < 0 && dB < 0) concave = 1; // m_convexEpsilon = 0
-    else if (clampNormal(ex, ey, ez, nAx, nAy, nAz, pt.nx, pt.ny, pt.nz, angle)) {
-      if (_cl[0] * tnx + _cl[1] * tny + _cl[2] * tnz > 0) setNormal(pt, _cl[0], _cl[1], _cl[2]);
+    else {
+      _tn[0] = nAx; _tn[1] = nAy; _tn[2] = nAz;
+      _cn[0] = pt.nx; _cn[1] = pt.ny; _cn[2] = pt.nz;
+      if (clampNormal() && _cl[0] * tnx + _cl[1] * tny + _cl[2] * tnz > 0) setNormal(pt, _cl);
     }
   }
   if (concave) {
     // snap to the (front-facing) triangle normal unless it opposes the contact normal
     if (tnx * cnx + tny * cny + tnz * cnz < 0) return;
-    setNormal(pt, tnx, tny, tnz);
+    _cl[0] = tnx; _cl[1] = tny; _cl[2] = tnz;
+    setNormal(pt, _cl);
   }
 }
-// new normal; reproject point B along it from point A
-function setNormal(pt, nx, ny, nz) {
+// new normal n (array of 3); reproject point B along it from point A
+function setNormal(pt, n) {
+  const nx = n[0], ny = n[1], nz = n[2];
   pt.nx = nx; pt.ny = ny; pt.nz = nz;
   pt.bx = pt.ax - nx * pt.dist; pt.by = pt.ay - ny * pt.dist; pt.bz = pt.az - nz * pt.dist;
 }
@@ -711,41 +772,47 @@ function setNormal(pt, nx, ny, nz) {
 // through it.
 const _rh = { t: 0, nx: 0, ny: 0, nz: 0, tri: -1 };
 const _rn = new Float64Array(3);
-function raySphere(fx, fy, fz, dx, dy, dz, c, r, maxT, nOut) {
-  const ox = fx - c.x, oy = fy - c.y, oz = fz - c.z;
+// ray: makeRay(); ray.best is the closest hit so far and is lowered on a hit
+// (normal in _rn).
+function raySphere(ray, ball) {
+  const c = ball.pos, r = ball.radius, dx = ray.dx, dy = ray.dy, dz = ray.dz;
+  const ox = ray.ox - c.x, oy = ray.oy - c.y, oz = ray.oz - c.z;
   const b = ox * dx + oy * dy + oz * dz, cc = ox * ox + oy * oy + oz * oz - r * r;
-  if (cc <= 0 || b > 0) return -1; // starts inside, or moving away
+  if (cc <= 0 || b > 0) return false; // starts inside, or moving away
   const disc = b * b - cc;
-  if (disc < 0) return -1;
+  if (disc < 0) return false;
   const t = -b - Math.sqrt(disc);
-  if (t >= maxT) return -1;
+  if (t >= ray.best) return false;
   const hx = ox + dx * t, hy = oy + dy * t, hz = oz + dz * t, l = Math.sqrt(hx * hx + hy * hy + hz * hz) || 1;
-  nOut[0] = hx / l; nOut[1] = hy / l; nOut[2] = hz / l;
-  return t;
+  _rn[0] = hx / l; _rn[1] = hy / l; _rn[2] = hz / l;
+  ray.best = t;
+  return true;
 }
 const _lo = new Float64Array(3), _ld = new Float64Array(3), _he = new Float64Array(3);
-function rayBox(fx, fy, fz, dx, dy, dz, car, maxT, nOut) {
+function rayBox(ray, car) {
   boxFrame(car, _by);
-  const R = car.R.e, h = car.half;
-  const ox = fx - _by.cx, oy = fy - _by.cy, oz = fz - _by.cz;
+  const R = car.R.e, h = car.half, dx = ray.dx, dy = ray.dy, dz = ray.dz;
+  const ox = ray.ox - _by.cx, oy = ray.oy - _by.cy, oz = ray.oz - _by.cz;
   // ray in box space
   const lo = _lo, ld = _ld, he = _he;
   lo[0] = R[0] * ox + R[3] * oy + R[6] * oz; lo[1] = R[1] * ox + R[4] * oy + R[7] * oz; lo[2] = R[2] * ox + R[5] * oy + R[8] * oz;
   ld[0] = R[0] * dx + R[3] * dy + R[6] * dz; ld[1] = R[1] * dx + R[4] * dy + R[7] * dz; ld[2] = R[2] * dx + R[5] * dy + R[8] * dz;
   he[0] = h.x; he[1] = h.y; he[2] = h.z;
+  const maxT = ray.best;
   let tmin = 0, tmax = maxT, axis = -1, sgn = 0;
   for (let i = 0; i < 3; i++) {
-    if (Math.abs(ld[i]) < 1e-12) { if (lo[i] < -he[i] || lo[i] > he[i]) return -1; continue; }
+    if (Math.abs(ld[i]) < 1e-12) { if (lo[i] < -he[i] || lo[i] > he[i]) return false; continue; }
     const inv = 1 / ld[i];
     let t1 = (-he[i] - lo[i]) * inv, t2 = (he[i] - lo[i]) * inv, s = -1;
     if (t1 > t2) { const tmp = t1; t1 = t2; t2 = tmp; s = 1; }
     if (t1 > tmin) { tmin = t1; axis = i; sgn = s; }
     if (t2 < tmax) tmax = t2;
-    if (tmin > tmax) return -1;
+    if (tmin > tmax) return false;
   }
-  if (tmin >= maxT || axis < 0) return -1; // beyond the ray, or starts inside
-  nOut[0] = R[axis] * sgn; nOut[1] = R[3 + axis] * sgn; nOut[2] = R[6 + axis] * sgn;
-  return tmin;
+  if (tmin >= maxT || axis < 0) return false; // beyond the closest hit, or starts inside
+  _rn[0] = R[axis] * sgn; _rn[1] = R[3 + axis] * sgn; _rn[2] = R[6 + axis] * sgn;
+  ray.best = tmin;
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -757,7 +824,7 @@ const _pa = new Float64Array(3), _pb = new Float64Array(3), _ua = new Float64Arr
 const _ctr = new Float64Array(3), _nr2 = new Float64Array(3), _nrr = new Float64Array(3), _anr = new Float64Array(3);
 const _quad = new Float64Array(8), _ret = new Float64Array(16), _buf = new Float64Array(16);
 const _point = new Float64Array(24), _dep = new Float64Array(8), _iret = new Int32Array(8), _A8 = new Float64Array(8), _avail = new Int32Array(8);
-const _ab = [0, 0], _AA = new Float64Array(3), _BB = new Float64Array(3), _rect = new Float64Array(2);
+const _ab = new Float64Array(2), _paO = new Float64Array(3), _AA = new Float64Array(3), _BB = new Float64Array(3), _rect = new Float64Array(2);
 const M__PI = 3.14159265;
 
 // dMatrix3 from our row-major M3 (R[4*row + col])
@@ -879,25 +946,40 @@ function boxBox(np, m, f1, e1, h1, f2, e2, h2) {
   const S = _sat;
   S.s = -Infinity; S.invert = false; S.code = 0; S.mat = null; S.col = -1;
   // separating axis = u1,u2,u3 then v1,v2,v3
-  if (!tstFace(S, _pp[0], A[0] + B[0] * Q11 + B[1] * Q12 + B[2] * Q13, R1, 0, 1)) return 0;
-  if (!tstFace(S, _pp[1], A[1] + B[0] * Q21 + B[1] * Q22 + B[2] * Q23, R1, 1, 2)) return 0;
-  if (!tstFace(S, _pp[2], A[2] + B[0] * Q31 + B[1] * Q32 + B[2] * Q33, R1, 2, 3)) return 0;
-  if (!tstFace(S, dDOT14(_p, R2, 0), A[0] * Q11 + A[1] * Q21 + A[2] * Q31 + B[0], R2, 0, 4)) return 0;
-  if (!tstFace(S, dDOT14(_p, R2, 1), A[0] * Q12 + A[1] * Q22 + A[2] * Q32 + B[1], R2, 1, 5)) return 0;
-  if (!tstFace(S, dDOT14(_p, R2, 2), A[0] * Q13 + A[1] * Q23 + A[2] * Q33 + B[2], R2, 2, 6)) return 0;
+  S.e1 = _pp[0]; S.e2 = A[0] + B[0] * Q11 + B[1] * Q12 + B[2] * Q13;
+  if (!tstFace(S, R1, 0, 1)) return 0;
+  S.e1 = _pp[1]; S.e2 = A[1] + B[0] * Q21 + B[1] * Q22 + B[2] * Q23;
+  if (!tstFace(S, R1, 1, 2)) return 0;
+  S.e1 = _pp[2]; S.e2 = A[2] + B[0] * Q31 + B[1] * Q32 + B[2] * Q33;
+  if (!tstFace(S, R1, 2, 3)) return 0;
+  S.e1 = dDOT14(_p, R2, 0); S.e2 = A[0] * Q11 + A[1] * Q21 + A[2] * Q31 + B[0];
+  if (!tstFace(S, R2, 0, 4)) return 0;
+  S.e1 = dDOT14(_p, R2, 1); S.e2 = A[0] * Q12 + A[1] * Q22 + A[2] * Q32 + B[1];
+  if (!tstFace(S, R2, 1, 5)) return 0;
+  S.e1 = dDOT14(_p, R2, 2); S.e2 = A[0] * Q13 + A[1] * Q23 + A[2] * Q33 + B[2];
+  if (!tstFace(S, R2, 2, 6)) return 0;
   // separating axis = u_i x v_j (normal relative to box 1)
   const f2e = 1.0e-5;
   Q11 += f2e; Q12 += f2e; Q13 += f2e; Q21 += f2e; Q22 += f2e; Q23 += f2e; Q31 += f2e; Q32 += f2e; Q33 += f2e;
   const pp = _pp;
-  if (!tstEdge(S, pp[2] * R21 - pp[1] * R31, A[1] * Q31 + A[2] * Q21 + B[1] * Q13 + B[2] * Q12, 0, -R31, R21, 7)) return 0;
-  if (!tstEdge(S, pp[2] * R22 - pp[1] * R32, A[1] * Q32 + A[2] * Q22 + B[0] * Q13 + B[2] * Q11, 0, -R32, R22, 8)) return 0;
-  if (!tstEdge(S, pp[2] * R23 - pp[1] * R33, A[1] * Q33 + A[2] * Q23 + B[0] * Q12 + B[1] * Q11, 0, -R33, R23, 9)) return 0;
-  if (!tstEdge(S, pp[0] * R31 - pp[2] * R11, A[0] * Q31 + A[2] * Q11 + B[1] * Q23 + B[2] * Q22, R31, 0, -R11, 10)) return 0;
-  if (!tstEdge(S, pp[0] * R32 - pp[2] * R12, A[0] * Q32 + A[2] * Q12 + B[0] * Q23 + B[2] * Q21, R32, 0, -R12, 11)) return 0;
-  if (!tstEdge(S, pp[0] * R33 - pp[2] * R13, A[0] * Q33 + A[2] * Q13 + B[0] * Q22 + B[1] * Q21, R33, 0, -R13, 12)) return 0;
-  if (!tstEdge(S, pp[1] * R11 - pp[0] * R21, A[0] * Q21 + A[1] * Q11 + B[1] * Q33 + B[2] * Q32, -R21, R11, 0, 13)) return 0;
-  if (!tstEdge(S, pp[1] * R12 - pp[0] * R22, A[0] * Q22 + A[1] * Q12 + B[0] * Q33 + B[2] * Q31, -R22, R12, 0, 14)) return 0;
-  if (!tstEdge(S, pp[1] * R13 - pp[0] * R23, A[0] * Q23 + A[1] * Q13 + B[0] * Q32 + B[1] * Q31, -R23, R13, 0, 15)) return 0;
+  S.e1 = pp[2] * R21 - pp[1] * R31; S.e2 = A[1] * Q31 + A[2] * Q21 + B[1] * Q13 + B[2] * Q12; S.n1 = 0; S.n2 = -R31; S.n3 = R21;
+  if (!tstEdge(S, 7)) return 0;
+  S.e1 = pp[2] * R22 - pp[1] * R32; S.e2 = A[1] * Q32 + A[2] * Q22 + B[0] * Q13 + B[2] * Q11; S.n1 = 0; S.n2 = -R32; S.n3 = R22;
+  if (!tstEdge(S, 8)) return 0;
+  S.e1 = pp[2] * R23 - pp[1] * R33; S.e2 = A[1] * Q33 + A[2] * Q23 + B[0] * Q12 + B[1] * Q11; S.n1 = 0; S.n2 = -R33; S.n3 = R23;
+  if (!tstEdge(S, 9)) return 0;
+  S.e1 = pp[0] * R31 - pp[2] * R11; S.e2 = A[0] * Q31 + A[2] * Q11 + B[1] * Q23 + B[2] * Q22; S.n1 = R31; S.n2 = 0; S.n3 = -R11;
+  if (!tstEdge(S, 10)) return 0;
+  S.e1 = pp[0] * R32 - pp[2] * R12; S.e2 = A[0] * Q32 + A[2] * Q12 + B[0] * Q23 + B[2] * Q21; S.n1 = R32; S.n2 = 0; S.n3 = -R12;
+  if (!tstEdge(S, 11)) return 0;
+  S.e1 = pp[0] * R33 - pp[2] * R13; S.e2 = A[0] * Q33 + A[2] * Q13 + B[0] * Q22 + B[1] * Q21; S.n1 = R33; S.n2 = 0; S.n3 = -R13;
+  if (!tstEdge(S, 12)) return 0;
+  S.e1 = pp[1] * R11 - pp[0] * R21; S.e2 = A[0] * Q21 + A[1] * Q11 + B[1] * Q33 + B[2] * Q32; S.n1 = -R21; S.n2 = R11; S.n3 = 0;
+  if (!tstEdge(S, 13)) return 0;
+  S.e1 = pp[1] * R12 - pp[0] * R22; S.e2 = A[0] * Q22 + A[1] * Q12 + B[0] * Q33 + B[2] * Q31; S.n1 = -R22; S.n2 = R12; S.n3 = 0;
+  if (!tstEdge(S, 14)) return 0;
+  S.e1 = pp[1] * R13 - pp[0] * R23; S.e2 = A[0] * Q23 + A[1] * Q13 + B[0] * Q32 + B[1] * Q31; S.n1 = -R23; S.n2 = R13; S.n3 = 0;
+  if (!tstEdge(S, 15)) return 0;
   const code = S.code;
   if (!code) return 0;
 
@@ -927,7 +1009,9 @@ function boxBox(np, m, f1, e1, h1, f2, e2, h2) {
     for (let i = 0; i < 3; i++) { _ua[i] = R1[ca + i * 4]; _ub[i] = R2[cb + i * 4]; }
     lineClosestApproach(p1, _ua, p2, _ub, _ab);
     for (let i = 0; i < 3; i++) p2[i] += _ub[i] * _ab[1];
-    np._add(m, -normal[0], -normal[1], -normal[2], p2[0], p2[1], p2[2], -depth, -1);
+    const p = np._tmp;
+    p.nx = -normal[0]; p.ny = -normal[1]; p.nz = -normal[2]; p.bx = p2[0]; p.by = p2[1]; p.bz = p2[2]; p.dist = -depth;
+    np._add(m, -1);
     return 1;
   }
 
@@ -935,6 +1019,7 @@ function boxBox(np, m, f1, e1, h1, f2, e2, h2) {
   let Ra, Rb, Sa, Sb, pax, pay, paz, pbx, pby, pbz;
   if (code <= 3) { Ra = R1; Rb = R2; Sa = A; Sb = B; pax = p1x; pay = p1y; paz = p1z; pbx = p2x; pby = p2y; pbz = p2z; }
   else { Ra = R2; Rb = R1; Sa = B; Sb = A; pax = p2x; pay = p2y; paz = p2z; pbx = p1x; pby = p1y; pbz = p1z; }
+  _paO[0] = pax; _paO[1] = pay; _paO[2] = paz;
   const n2 = _nr2;
   if (code <= 3) { n2[0] = normal[0]; n2[1] = normal[1]; n2[2] = normal[2]; }
   else { n2[0] = -normal[0]; n2[1] = -normal[1]; n2[2] = -normal[2]; }
@@ -987,35 +1072,38 @@ function boxBox(np, m, f1, e1, h1, f2, e2, h2) {
   if (maxc > cnum) maxc = cnum;
   if (maxc < 1) maxc = 1;
   if (cnum <= maxc) {
-    for (let j = 0; j < cnum; j++) emitBoxPoint(np, m, j, code, pax, pay, paz);
+    for (let j = 0; j < cnum; j++) emitBoxPoint(np, m, j, code);
   } else {
     let i1 = 0, maxdepth = _dep[0];
     for (let i = 1; i < cnum; i++) if (_dep[i] > maxdepth) { maxdepth = _dep[i]; i1 = i; }
     cullPoints2(cnum, _ret, maxc, i1, _iret);
-    for (let j = 0; j < maxc; j++) emitBoxPoint(np, m, _iret[j], code, pax, pay, paz);
+    for (let j = 0; j < maxc; j++) emitBoxPoint(np, m, _iret[j], code);
     cnum = maxc;
   }
   return cnum;
 }
 
 // output.addContactPoint(-normal, point (moved onto box 2's face if box 2 is the reference), -depth)
-function emitBoxPoint(np, m, j, code, pax, pay, paz) {
-  const normal = _nrm;
-  let x = _point[j * 3] + pax, y = _point[j * 3 + 1] + pay, z = _point[j * 3 + 2] + paz;
+function emitBoxPoint(np, m, j, code) {
+  const normal = _nrm, p = np._tmp;
+  let x = _point[j * 3] + _paO[0], y = _point[j * 3 + 1] + _paO[1], z = _point[j * 3 + 2] + _paO[2];
   if (code >= 4) { x -= normal[0] * _dep[j]; y -= normal[1] * _dep[j]; z -= normal[2] * _dep[j]; }
-  np._add(m, -normal[0], -normal[1], -normal[2], x, y, z, -_dep[j], -1);
+  p.nx = -normal[0]; p.ny = -normal[1]; p.nz = -normal[2]; p.bx = x; p.by = y; p.bz = z; p.dist = -_dep[j];
+  np._add(m, -1);
 }
 
 // dBoxBox2 TST macros (face axes, then scaled cross-product axes with the 1.05 fudge)
-const _sat = { s: 0, invert: false, code: 0, mat: null, col: -1 };
-function tstFace(S, e1v, e2v, mat, col, cc) {
-  const s2 = Math.abs(e1v) - e2v;
+// expression1 / expression2 (and the edge axis n1..n3) arrive in S's fields
+const _sat = { s: 0.5, invert: false, code: 0, mat: null, col: -1, e1: 0.5, e2: 0.5, n1: 0.5, n2: 0.5, n3: 0.5 };
+function tstFace(S, mat, col, cc) {
+  const e1v = S.e1, s2 = Math.abs(e1v) - S.e2;
   if (s2 > 0) return false;
   if (s2 > S.s) { S.s = s2; S.mat = mat; S.col = col; S.invert = e1v < 0; S.code = cc; }
   return true;
 }
-function tstEdge(S, e1v, e2v, n1, n2, n3, cc) {
-  let s2 = Math.abs(e1v) - e2v;
+function tstEdge(S, cc) {
+  const e1v = S.e1, n1 = S.n1, n2 = S.n2, n3 = S.n3;
+  let s2 = Math.abs(e1v) - S.e2;
   if (s2 > SIMD_EPSILON) return false;
   const l = Math.sqrt(n1 * n1 + n2 * n2 + n3 * n3);
   if (l > SIMD_EPSILON) {

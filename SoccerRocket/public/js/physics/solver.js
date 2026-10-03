@@ -82,7 +82,10 @@ function mulI(I, x, y, z, out) {
   return out;
 }
 
-const _t = new V3(), _p = new V3(), _q = new V3();
+const _t = new V3(), _p = new V3(), _pv = new V3(), _tw = new V3();
+// Inputs of _setupContact / _addFriction. Doubles travel in fields: passed as
+// arguments to a function V8 does not inline they would each be boxed.
+const _c = { nx: 0.5, ny: 0.5, nz: 0.5, r1x: 0.5, r1y: 0.5, r1z: 0.5, r2x: 0.5, r2y: 0.5, r2z: 0.5, dist: 0.5, friction: 0.5, restitution: 0.5 };
 
 // btPlaneSpace1: two unit vectors orthogonal to n (n unit)
 function planeSpace1(nx, ny, nz, p) {
@@ -97,10 +100,13 @@ function planeSpace1(nx, ny, nz, p) {
 }
 
 /**
- * btTransformUtil::integrateTransform (exponential map), in place on pos/quat.
+ * btTransformUtil::integrateTransform (exponential map), in place on pos/quat,
+ * with linear velocity v and angular velocity w ({x, y, z}) over step.dt.
  */
-export function integrateTransform(pos, q, vx, vy, vz, wx, wy, wz, dt) {
-  pos.x += vx * dt; pos.y += vy * dt; pos.z += vz * dt;
+export function integrateTransform(pos, q, v, av, step) {
+  const dt = step.dt;
+  pos.x += v.x * dt; pos.y += v.y * dt; pos.z += v.z * dt;
+  const wx = av.x, wy = av.y, wz = av.z;
   const a2 = wx * wx + wy * wy + wz * wz;
   let ang = a2 > SIMD_EPSILON ? Math.sqrt(a2) : 0;
   if (ang * dt > ANGULAR_MOTION_THRESHOLD) ang = ANGULAR_MOTION_THRESHOLD / dt;
@@ -180,12 +186,14 @@ export class Solver {
    */
   addContact(pt) {
     const A = pt.a.sb, B = pt.b ? pt.b.sb : this.fixed;
-    const pa = pt.a.pos;
+    const pa = pt.a.pos, C = _c;
     const r1x = pt.ax - pa.x, r1y = pt.ay - pa.y, r1z = pt.az - pa.z;
-    let r2x = 0, r2y = 0, r2z = 0;
-    if (pt.b) { const pb = pt.b.pos; r2x = pt.bx - pb.x; r2y = pt.by - pb.y; r2z = pt.bz - pb.z; }
-    else { r2x = pt.bx; r2y = pt.by; r2z = pt.bz; } // static: origin at 0
-    const row = this._setupContact(A, B, pt.nx, pt.ny, pt.nz, r1x, r1y, r1z, r2x, r2y, r2z, pt.dist, pt.friction, pt.restitution);
+    C.r1x = r1x; C.r1y = r1y; C.r1z = r1z;
+    if (pt.b) { const pb = pt.b.pos; C.r2x = pt.bx - pb.x; C.r2y = pt.by - pb.y; C.r2z = pt.bz - pb.z; }
+    else { C.r2x = pt.bx; C.r2y = pt.by; C.r2z = pt.bz; } // static: origin at 0
+    C.nx = pt.nx; C.ny = pt.ny; C.nz = pt.nz;
+    C.dist = pt.dist; C.friction = pt.friction; C.restitution = pt.restitution;
+    const row = this._setupContact(A, B);
     row.special = !!pt.special;
     if (pt.special) {
       // RocketSim: accumulate btSpecialResolveInfo on the dynamic body (A)
@@ -194,12 +202,14 @@ export class Solver {
       A.spNx += pt.nx; A.spNy += pt.ny; A.spNz += pt.nz;
       A.spDist += Math.sqrt(r1x * r1x + r1y * r1y + r1z * r1z);
     }
-    this._addFriction(row, A, B, pt.nx, pt.ny, pt.nz, r1x, r1y, r1z, r2x, r2y, r2z, pt.friction);
+    this._addFriction(row, A, B);
     return row;
   }
 
-  // setupContactConstraint (relaxation = SOR = 1, cfm = 0)
-  _setupContact(A, B, nx, ny, nz, r1x, r1y, r1z, r2x, r2y, r2z, dist, friction, restitution) {
+  // setupContactConstraint (relaxation = SOR = 1, cfm = 0) for the contact in _c
+  _setupContact(A, B) {
+    const C = _c, nx = C.nx, ny = C.ny, nz = C.nz, dist = C.dist, friction = C.friction, restitution = C.restitution;
+    const r1x = C.r1x, r1y = C.r1y, r1z = C.r1z, r2x = C.r2x, r2y = C.r2y, r2z = C.r2z;
     const c = this._row(this.rows, this.nRows++);
     c.A = A; c.B = B;
     // torqueAxis0 = r1 x n, torqueAxis1 = r2 x n
@@ -265,7 +275,9 @@ export class Solver {
   }
 
   // convertContactInner: one friction row along the relative tangential velocity
-  _addFriction(contact, A, B, nx, ny, nz, r1x, r1y, r1z, r2x, r2y, r2z, friction) {
+  _addFriction(contact, A, B) {
+    const C = _c, nx = C.nx, ny = C.ny, nz = C.nz, friction = C.friction;
+    const r1x = C.r1x, r1y = C.r1y, r1z = C.r1z, r2x = C.r2x, r2y = C.r2y, r2z = C.r2z;
     // getVelocityInLocalPointNoDelta: v + extF + (w + extT) x r
     let vx = 0, vy = 0, vz = 0;
     if (A.dyn) {
@@ -326,12 +338,14 @@ export class Solver {
 
   // RocketSim convertContactSpecial: one averaged contact against the fixed body
   _addSpecial(A) {
-    const n = A.nSpecial;
+    const n = A.nSpecial, C = _c;
     const dist = A.spDist / n;
     const nx = A.spNx / n, ny = A.spNy / n, nz = A.spNz / n;
-    const r1x = -nx * dist, r1y = -ny * dist, r1z = -nz * dist;
-    const c = this._setupContact(A, this.fixed, nx, ny, nz, r1x, r1y, r1z, 0, 0, 0, dist, A.spFriction, A.spRestitution);
-    this._addFriction(c, A, this.fixed, nx, ny, nz, r1x, r1y, r1z, 0, 0, 0, A.spFriction);
+    C.nx = nx; C.ny = ny; C.nz = nz;
+    C.r1x = -nx * dist; C.r1y = -ny * dist; C.r1z = -nz * dist; C.r2x = 0; C.r2y = 0; C.r2z = 0;
+    C.dist = dist; C.friction = A.spFriction; C.restitution = A.spRestitution;
+    const c = this._setupContact(A, this.fixed);
+    this._addFriction(c, A, this.fixed);
     A.nSpecial = 0;
   }
 
@@ -388,17 +402,18 @@ export class Solver {
 
   /** writeBackBodies + integrateTransforms for every solver body. */
   finish() {
-    const dt = this.dt;
     for (let i = 0; i < this.nBodies; i++) {
       const sb = this.bodies[i], b = sb.body;
       const vx = sb.vx + sb.dvx, vy = sb.vy + sb.dvy, vz = sb.vz + sb.dvz;
       const wx = sb.wx + sb.dwx, wy = sb.wy + sb.dwy, wz = sb.wz + sb.dwz;
       if (sb.pvx !== 0 || sb.pvy !== 0 || sb.pvz !== 0 || sb.twx !== 0 || sb.twy !== 0 || sb.twz !== 0) {
-        integrateTransform(b.pos, b.quat, sb.pvx, sb.pvy, sb.pvz, sb.twx * SPLIT_TURN_ERP, sb.twy * SPLIT_TURN_ERP, sb.twz * SPLIT_TURN_ERP, dt);
+        _pv.set(sb.pvx, sb.pvy, sb.pvz);
+        _tw.set(sb.twx * SPLIT_TURN_ERP, sb.twy * SPLIT_TURN_ERP, sb.twz * SPLIT_TURN_ERP);
+        integrateTransform(b.pos, b.quat, _pv, _tw, this);
       }
       b.vel.set(vx + sb.fex, vy + sb.fey, vz + sb.fez);
       b.angVel.set(wx + sb.tex, wy + sb.tey, wz + sb.tez);
-      integrateTransform(b.pos, b.quat, b.vel.x, b.vel.y, b.vel.z, b.angVel.x, b.angVel.y, b.angVel.z, dt);
+      integrateTransform(b.pos, b.quat, b.vel, b.angVel, this);
       b.R.fromQuat(b.quat);
       sb.body = null;
     }
