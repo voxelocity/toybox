@@ -129,10 +129,11 @@ export class Narrowphase {
 
   begin() { this.nManifolds = 0; }
 
-  _manifold(a, b, kind, threshold) {
+  // (the caller sets m.threshold: a double argument would be boxed)
+  _manifold(a, b, kind) {
     let m = this.manifolds[this.nManifolds];
     if (!m) m = this.manifolds[this.nManifolds] = new Manifold();
-    m.n = 0; m.a = a; m.b = b; m.kind = kind; m.threshold = threshold;
+    m.n = 0; m.a = a; m.b = b; m.kind = kind;
     return m;
   }
   // keep the manifold only if it got points (Bullet drops empty ones in the solver anyway)
@@ -182,7 +183,7 @@ export class Narrowphase {
     const mesh = this.mesh, thr = BALL_CONTACT_THRESHOLD, r = ball.radius, p = this._tmp;
     const c = ball.pos, e = r + BALL_AABB_EXTRA, box = this._box;
     box[0] = c.x - e; box[1] = c.y - e; box[2] = c.z - e; box[3] = c.x + e; box[4] = c.y + e; box[5] = c.z + e;
-    const m = this._manifold(ball, null, KIND_BALL_WORLD, thr);
+    const m = this._manifold(ball, null, KIND_BALL_WORLD); m.threshold = thr;
     const n = mesh.overlapping(box);
     for (let k = 0; k < n; k++) {
       const t = mesh.hits[k];
@@ -193,7 +194,7 @@ export class Narrowphase {
       const P = PLANES[i];
       const d = P.nx * (c.x - P.px) + P.ny * (c.y - P.py) + P.nz * (c.z - P.pz) - r;
       if (d >= thr) continue;
-      const mp = this._manifold(ball, null, KIND_BALL_WORLD, thr);
+      const mp = this._manifold(ball, null, KIND_BALL_WORLD); mp.threshold = thr;
       // support vertex c - n r, projected onto the plane
       const k = r + d;
       p.nx = P.nx; p.ny = P.ny; p.nz = P.nz; p.bx = c.x - P.nx * k; p.by = c.y - P.ny * k; p.bz = c.z - P.nz * k; p.dist = d;
@@ -214,7 +215,7 @@ export class Narrowphase {
     const ey = Math.abs(R[3]) * h.x + Math.abs(R[4]) * h.y + Math.abs(R[5]) * h.z;
     const ez = Math.abs(R[6]) * h.x + Math.abs(R[7]) * h.y + Math.abs(R[8]) * h.z;
     box[0] = _bx.cx - ex; box[1] = _bx.cy - ey; box[2] = _bx.cz - ez; box[3] = _bx.cx + ex; box[4] = _bx.cy + ey; box[5] = _bx.cz + ez;
-    const m = this._manifold(car, null, KIND_CAR_WORLD, thr);
+    const m = this._manifold(car, null, KIND_CAR_WORLD); m.threshold = thr;
     const n = mesh.overlapping(box);
     const T = mesh.tris, N = mesh.norms;
     for (let k = 0; k < n; k++) {
@@ -238,7 +239,7 @@ export class Narrowphase {
       const vz = _bx.cz + R[6] * sx + R[7] * sy + R[8] * sz;
       const d = P.nx * (vx - P.px) + P.ny * (vy - P.py) + P.nz * (vz - P.pz);
       if (d >= thr) continue;
-      const mp = this._manifold(car, null, KIND_CAR_WORLD, thr);
+      const mp = this._manifold(car, null, KIND_CAR_WORLD); mp.threshold = thr;
       p.nx = P.nx; p.ny = P.ny; p.nz = P.nz; p.bx = vx - P.nx * d; p.by = vy - P.ny * d; p.bz = vz - P.nz * d; p.dist = d;
       this._add(mp, -1);
       this._commit(mp);
@@ -278,7 +279,7 @@ export class Narrowphase {
     p.dist = dist - inter;
     p.nx = R[0] * nx + R[1] * ny + R[2] * nz; p.ny = R[3] * nx + R[4] * ny + R[5] * nz; p.nz = R[6] * nx + R[7] * ny + R[8] * nz;
     p.bx = _bx.cx + R[0] * px + R[1] * py + R[2] * pz; p.by = _bx.cy + R[3] * px + R[4] * py + R[5] * pz; p.bz = _bx.cz + R[6] * px + R[7] * py + R[8] * pz;
-    const m = this._manifold(ball, car, KIND_CAR_BALL, thr);
+    const m = this._manifold(ball, car, KIND_CAR_BALL); m.threshold = thr;
     this._add(m, -1);
     this._commit(m);
   }
@@ -292,7 +293,8 @@ export class Narrowphase {
   carCar(carA, carB) {
     boxFrame(carA, _bx); boxFrame(carB, _by);
     if (!aabbsOverlap(_bx, carA, _by, carB, BROADPHASE_AABB_EXTRA)) return;
-    const m = this._manifold(carA, carB, KIND_CAR_CAR, Math.min(carA.contactThreshold, carB.contactThreshold));
+    const m = this._manifold(carA, carB, KIND_CAR_CAR);
+    m.threshold = carA.contactThreshold < carB.contactThreshold ? carA.contactThreshold : carB.contactThreshold;
     boxBox(this, m, _bx, carA.R.e, carA.half, _by, carB.R.e, carB.half);
     this._commit(m);
   }

@@ -381,8 +381,9 @@ export class World {
 
   /** Car vs arena: flag + normal for next tick's auto-flip / auto-roll; materials. */
   onCarWorld(car, pt) {
-    car.worldContact.hasContact = true;
-    car.worldContact.normal.set(pt.nx, pt.ny, pt.nz);
+    const wc = car.worldContact, n = wc.normal;
+    wc.hasContact = true;
+    n.x = pt.nx; n.y = pt.ny; n.z = pt.nz;
     pt.friction = K.CARWORLD_FRICTION;
     pt.restitution = K.CARWORLD_RESTITUTION;
     const i = car.id;

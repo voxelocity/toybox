@@ -41,14 +41,18 @@
 //   finishPhysicsTick()  velocity cache, then the single velocity clamp.
 // Collision shape: RocketSim's Octane box (half extents incl. Bullet margin
 // in `half`, `margin`, offset hbOffset), inertia from btBoxShape.
-import { V3, Quat, M3, applyInvInertia, curve, clamp, sign } from './math.js';
+import { V3, Quat, M3, applyInvInertia } from './math.js';
 import * as K from './constants.js';
 import { makeRayHit, HIT_STATIC, HIT_BALL } from './contacts.js';
 
 const _v = new V3(), _r = new V3(), _a = new V3(), _b = new V3(), _c = new V3(), _d = new V3(), _e = new V3();
 const _fwd = new V3(), _right = new V3(), _up = new V3(), _down = new V3(), _gUp = new V3();
 const _hit = makeRayHit();
-const _k = new Float64Array(1); // scalar results of helpers (no boxed doubles)
+// Hot paths pass no freshly computed doubles to calls and use no double
+// results of calls (V8 boxes them when it does not inline the callee, which
+// happens once a big function has used up its inlining budget): vector math
+// is written out per component, helpers return scalars through _k.
+const _k = new Float64Array(1);
 const TRAVEL = K.MAX_SUSPENSION_TRAVEL;
 const SIMD_EPSILON_SQ = 1.1920928955078125e-7 * 1.1920928955078125e-7;
 // Bullet's btContactSolverInfo defaults: m_erp, and m_timeStep before the
@@ -70,6 +74,23 @@ export function makeControls() {
   return { throttle: 0, steer: 0, pitch: 0, yaw: 0, roll: 0, jump: false, boost: false, handbrake: false };
 }
 
+// LinearPieceCurve::GetOutput (math.js curve) evaluated in place on _k[0]:
+// a double passed to or returned from a call V8 does not inline is boxed,
+// numbers in a Float64Array are not.
+function curveK(pts) {
+  const x = _k[0];
+  if (x <= pts[0][0]) { _k[0] = pts[0][1]; return; }
+  for (let i = 1; i < pts.length; i++) {
+    const b = pts[i];
+    if (x <= b[0]) {
+      const a = pts[i - 1];
+      _k[0] = a[1] + (b[1] - a[1]) * (x - a[0]) / (b[0] - a[0]);
+      return;
+    }
+  }
+  _k[0] = pts[pts.length - 1][1];
+}
+
 // btVector3::safeNormalize
 function safeNormalize(v) {
   const l2 = v.x * v.x + v.y * v.y + v.z * v.z;
@@ -87,7 +108,9 @@ function angularTerm(body, r, n) {
 // body velocity at offset r from its centre of mass (getVelocityInLocalPoint)
 function velocityAt(body, r, out) {
   const v = body.vel, w = body.angVel;
-  return out.set(v.x + w.y * r.z - w.z * r.y, v.y + w.z * r.x - w.x * r.z, v.z + w.x * r.y - w.y * r.x);
+  const x = v.x + w.y * r.z - w.z * r.y, y = v.y + w.z * r.x - w.x * r.z, z = v.z + w.x * r.y - w.y * r.x;
+  out.x = x; out.y = y; out.z = z;
+  return out;
 }
 
 export class Car {
@@ -237,11 +260,11 @@ export class Car {
     this.events.length = 0;
     if (this.isDemoed) return;
     const c = this.controls, s = this.rsControls;
-    s.throttle = clamp(+c.throttle || 0, -1, 1);
-    s.steer = -clamp(+c.steer || 0, -1, 1);
-    s.pitch = clamp(+c.pitch || 0, -1, 1);
-    s.yaw = -clamp(+c.yaw || 0, -1, 1);
-    s.roll = -clamp(+c.roll || 0, -1, 1);
+    let v = +c.throttle || 0; s.throttle = v < -1 ? -1 : v > 1 ? 1 : v;
+    v = +c.steer || 0; s.steer = v < -1 ? 1 : v > 1 ? -1 : -v;
+    v = +c.pitch || 0; s.pitch = v < -1 ? -1 : v > 1 ? 1 : v;
+    v = +c.yaw || 0; s.yaw = v < -1 ? 1 : v > 1 ? -1 : -v;
+    v = +c.roll || 0; s.roll = v < -1 ? 1 : v > 1 ? -1 : -v;
     s.jump = !!c.jump; s.boost = !!c.boost; s.handbrake = !!c.handbrake;
     this._unlimitedBoost = !!world.unlimitedBoost;
     this._solverDt = world.tick === 0 ? BT_DEFAULT_SOLVER_DT : dt;
@@ -267,11 +290,11 @@ export class Car {
     this.isOnGround = n >= 3;
     if (this.isOnGround && !wasOnGround) {
       this._upwardsDir(_gUp);
-      this.lastLandSpeed = Math.abs(this.vel.dot(_gUp));
+      this.lastLandSpeed = Math.abs((this.vel.x * _gUp.x + this.vel.y * _gUp.y + this.vel.z * _gUp.z));
       if (nBall < 3) this.events.push('land');
       else if (this.hasJumped || this.hasDoubleJumped || this.hasFlipped) this.events.push('flipReset');
     }
-    this.forwardSpeed = this.vel.dot(fwd);
+    this.forwardSpeed = (this.vel.x * fwd.x + this.vel.y * fwd.y + this.vel.z * fwd.z);
 
     this._updateWheels(dt);
     if (n < 3) this._updateAirTorque(n === 0);
@@ -311,15 +334,19 @@ export class Car {
     const up = _up;
     w.contact = false; w.contactWorld = false; w.hitType = -1; w.hitBody = null;
     if (world.raycastWheel(w.hard, _down, w.rayLen, this, _hit)) {
-      const p = w.point.set(_hit.px, _hit.py, _hit.pz), nrm = w.normal.set(_hit.nx, _hit.ny, _hit.nz);
+      const p = w.point, nrm = w.normal;
+      p.x = _hit.px; p.y = _hit.py; p.z = _hit.pz;
+      nrm.x = _hit.nx; nrm.y = _hit.ny; nrm.z = _hit.nz;
       w.contact = true;
       w.contactWorld = _hit.type === HIT_STATIC;
       w.hitType = _hit.type; w.hitBody = _hit.body;
       const traceLen = (w.hard.x - p.x) * up.x + (w.hard.y - p.y) * up.y + (w.hard.z - p.z) * up.z;
-      w.susLen = clamp(traceLen - w.radius, w.rest - TRAVEL, w.rest + TRAVEL);
-      const denom = nrm.dot(up);
+      const len = traceLen - w.radius, lo = w.rest - TRAVEL, hi = w.rest + TRAVEL;
+      w.susLen = len < lo ? lo : len > hi ? hi : len;
+      const denom = (nrm.x * up.x + nrm.y * up.y + nrm.z * up.z);
       _r.subVectors(p, this.pos);
-      const projVel = nrm.dot(velocityAt(this, _r, _v));
+      velocityAt(this, _r, _v);
+      const projVel = (nrm.x * _v.x + nrm.y * _v.y + nrm.z * _v.z);
       if (denom > 0.1) {
         const inv = 1 / denom;
         w.relVel = projVel * inv;
@@ -344,7 +371,8 @@ export class Car {
       w.normal.copy(up);
       w.clippedInv = 1;
       w.extraPushback = 0;
-      w.point.copy(w.hard).addScaled(_down, w.rayLen);
+      const L = w.rayLen, h = w.hard;
+      w.point.x = h.x + _down.x * L; w.point.y = h.y + _down.y * L; w.point.z = h.z + _down.z * L;
     }
   }
 
@@ -356,7 +384,9 @@ export class Car {
       if (!w.contact) { w.impulse.set(0, 0, 0); continue; }
       const nrm = w.normal, g = w.hitBody; // g: null for static ground
       // axle (with steering) on the contact plane, wheel forward = n x axle
-      const axle = _a.copy(w.axle).addScaled(nrm, -w.axle.dot(nrm));
+      const wa = w.axle, proj = wa.x * nrm.x + wa.y * nrm.y + wa.z * nrm.z;
+      const axle = _a;
+      axle.x = wa.x - nrm.x * proj; axle.y = wa.y - nrm.y * proj; axle.z = wa.z - nrm.z * proj;
       safeNormalize(axle);
       const fwdDir = safeNormalize(_b.crossVectors(nrm, axle));
       // resolveSingleBilateral(chassis, contact, ground, contact, 0, axle)
@@ -371,23 +401,25 @@ export class Car {
         angularTerm(g, _c, axle);
         jacDiag += g.invMass + _k[0];
       }
-      const sideImpulse = -K.BT_CONTACT_DAMPING * axle.dot(_v) / jacDiag;
+      const sideImpulse = -K.BT_CONTACT_DAMPING * (axle.x * _v.x + axle.y * _v.y + axle.z * _v.z) / jacDiag;
       let rollingFriction = 0;
       if (w.engineForce === 0) {
         if (w.brake) {
           // the ground velocity is taken at the CAR-relative offset (Bullet quirk)
           velocityAt(this, _r, _v);
           if (g) _v.sub(velocityAt(g, _r, _c));
-          rollingFriction = clamp(-_v.dot(fwdDir) * K.ROLLING_FRICTION_SCALE_MAGIC, -w.brake, w.brake);
+          const relVel = _v.x * fwdDir.x + _v.y * fwdDir.y + _v.z * fwdDir.z;
+          const rf = -relVel * K.ROLLING_FRICTION_SCALE_MAGIC, b = w.brake;
+          rollingFriction = rf < -b ? -b : rf > b ? b : rf;
         }
       } else {
         rollingFriction = -w.engineForce / frictionScale;
       }
       const lon = rollingFriction * w.longFriction, lat = sideImpulse * w.latFriction;
-      w.impulse.set(
-        (fwdDir.x * lon + axle.x * lat) * frictionScale,
-        (fwdDir.y * lon + axle.y * lat) * frictionScale,
-        (fwdDir.z * lon + axle.z * lat) * frictionScale);
+      const imp = w.impulse;
+      imp.x = (fwdDir.x * lon + axle.x * lat) * frictionScale;
+      imp.y = (fwdDir.y * lon + axle.y * lat) * frictionScale;
+      imp.z = (fwdDir.z * lon + axle.z * lat) * frictionScale;
     }
   }
 
@@ -410,17 +442,20 @@ export class Car {
     const dtf = f32(dt);
     if (s.handbrake) this.handbrakeVal = f32(this.handbrakeVal + f32(K.POWERSLIDE_RISE_RATE * dtf));
     else this.handbrakeVal = f32(this.handbrakeVal - f32(K.POWERSLIDE_FALL_RATE * dtf));
-    this.handbrakeVal = clamp(this.handbrakeVal, 0, 1);
+    if (this.handbrakeVal < 0) this.handbrakeVal = 0; else if (this.handbrakeVal > 1) this.handbrakeVal = 1;
 
     let realThrottle = s.throttle, realBrake = 0;
     if (s.boost && (this.boost > 0 || this._unlimitedBoost)) realThrottle = 1;
 
     // throttle / brake forces
-    let driveSpeedScale = curve(K.DRIVE_SPEED_TORQUE_CURVE, absForwardSpeed);
+    _k[0] = absForwardSpeed; curveK(K.DRIVE_SPEED_TORQUE_CURVE);
+    let driveSpeedScale = _k[0];
     let engineThrottle = realThrottle;
     if (!s.handbrake) { // powersliding: the input throttle is used as is
       if (Math.abs(realThrottle) >= K.THROTTLE_DEADZONE) {
-        if (absForwardSpeed > K.STOPPING_FORWARD_VEL && sign(realThrottle) !== sign(forwardSpeed)) {
+        // RS_SGN(realThrottle) != RS_SGN(forwardSpeed)
+        const st = realThrottle > 0 ? 1 : realThrottle < 0 ? -1 : 0, sv = forwardSpeed > 0 ? 1 : forwardSpeed < 0 ? -1 : 0;
+        if (absForwardSpeed > K.STOPPING_FORWARD_VEL && st !== sv) {
           // full brake when driving against the motion
           realBrake = 1;
           if (absForwardSpeed > K.BRAKING_NO_THROTTLE_SPEED_THRESH) engineThrottle = 0;
@@ -437,9 +472,11 @@ export class Car {
     for (let i = 0; i < 4; i++) { wheels[i].engineForce = engineForce; wheels[i].brake = brakeForce; }
 
     // steering
-    let steerAngle = curve(K.STEER_ANGLE_CURVE, absForwardSpeed);
+    _k[0] = absForwardSpeed; curveK(K.STEER_ANGLE_CURVE);
+    let steerAngle = _k[0];
     if (this.handbrakeVal) {
-      steerAngle += (curve(K.POWERSLIDE_STEER_ANGLE_CURVE, absForwardSpeed) - steerAngle) * this.handbrakeVal;
+      _k[0] = absForwardSpeed; curveK(K.POWERSLIDE_STEER_ANGLE_CURVE);
+      steerAngle += (_k[0] - steerAngle) * this.handbrakeVal;
     }
     steerAngle *= s.steer;
     wheels[0].steerAngle = wheels[1].steerAngle = steerAngle;
@@ -453,21 +490,25 @@ export class Car {
       const latDir = w.axle, longDir = _b.crossVectors(latDir, w.normal);
       _r.subVectors(w.hard, this.pos);
       velocityAt(this, _r, _v);
-      const baseFriction = Math.abs(_v.dot(latDir));
+      const baseFriction = Math.abs((_v.x * latDir.x + _v.y * latDir.y + _v.z * latDir.z));
       let frictionCurveInput = 0;
       // significant friction results in lateral slip
-      if (baseFriction > 5) frictionCurveInput = baseFriction / (Math.abs(_v.dot(longDir)) + baseFriction);
-      let latFriction = curve(K.LAT_FRICTION_CURVE, frictionCurveInput);
-      let longFriction = curve(K.LONG_FRICTION_CURVE, frictionCurveInput);
+      if (baseFriction > 5) frictionCurveInput = baseFriction / (Math.abs((_v.x * longDir.x + _v.y * longDir.y + _v.z * longDir.z)) + baseFriction);
+      _k[0] = frictionCurveInput; curveK(K.LAT_FRICTION_CURVE);
+      let latFriction = _k[0];
+      _k[0] = frictionCurveInput; curveK(K.LONG_FRICTION_CURVE);
+      let longFriction = _k[0];
       if (hb) {
         latFriction *= (K.HANDBRAKE_LAT_FRICTION_FACTOR - 1) * hb + 1;
-        longFriction *= (curve(K.HANDBRAKE_LONG_FRICTION_CURVE, frictionCurveInput) - 1) * hb + 1;
+        _k[0] = frictionCurveInput; curveK(K.HANDBRAKE_LONG_FRICTION_CURVE);
+        longFriction *= (_k[0] - 1) * hb + 1;
       } else {
         longFriction = 1;
       }
       if (realThrottle === 0) {
         // not sticky: scale friction down by how steep the surface is
-        const nonStickyScale = curve(K.NON_STICKY_FRICTION_CURVE, w.normal.z);
+        _k[0] = w.normal.z; curveK(K.NON_STICKY_FRICTION_CURVE);
+        const nonStickyScale = _k[0];
         latFriction *= nonStickyScale;
         longFriction *= nonStickyScale;
       }
@@ -481,7 +522,8 @@ export class Car {
       const fullStick = realThrottle !== 0 || absForwardSpeed > K.STOPPING_FORWARD_VEL;
       let stickyForceScale = K.STICKY_FORCE_BASE;
       if (fullStick) stickyForceScale += 1 - Math.abs(upwardsDir.z);
-      this.extForce.addScaled(upwardsDir, stickyForceScale * K.GRAVITY_Z);
+      const a = stickyForceScale * K.GRAVITY_Z, F = this.extForce;
+      F.x += upwardsDir.x * a; F.y += upwardsDir.y * a; F.z += upwardsDir.z * a;
     }
   }
 
@@ -496,7 +538,7 @@ export class Car {
       if (!rt.isZero()) {
         // flip cancel check
         let pitchScale = 1;
-        if (rt.y !== 0 && s.pitch !== 0 && sign(rt.y) === sign(s.pitch)) {
+        if (rt.y !== 0 && s.pitch !== 0 && (rt.y > 0) === (s.pitch > 0)) {
           pitchScale = 1 - Math.min(Math.abs(s.pitch), 1);
           doAirControl = true;
         }
@@ -525,15 +567,18 @@ export class Car {
         tz = -right.z * p + up.z * y - fwd.z * r;
       }
       const w = this.angVel;
-      const dampPitch = -right.dot(w) * K.AIR_DAMPING.pitch * (1 - Math.abs(s.pitch * pitchTorqueScale));
-      const dampYaw = up.dot(w) * K.AIR_DAMPING.yaw * (1 - Math.abs(s.yaw));
-      const dampRoll = -fwd.dot(w) * K.AIR_DAMPING.roll;
+      const dampPitch = -(right.x * w.x + right.y * w.y + right.z * w.z) * K.AIR_DAMPING.pitch * (1 - Math.abs(s.pitch * pitchTorqueScale));
+      const dampYaw = (up.x * w.x + up.y * w.y + up.z * w.z) * K.AIR_DAMPING.yaw * (1 - Math.abs(s.yaw));
+      const dampRoll = -(fwd.x * w.x + fwd.y * w.y + fwd.z * w.z) * K.AIR_DAMPING.roll;
       const S = K.CAR_TORQUE_SCALE;
       Tq.x += (tx - (up.x * dampYaw - right.x * dampPitch - fwd.x * dampRoll)) * S;
       Tq.y += (ty - (up.y * dampYaw - right.y * dampPitch - fwd.y * dampRoll)) * S;
       Tq.z += (tz - (up.z * dampYaw - right.z * dampPitch - fwd.z * dampRoll)) * S;
     }
-    if (s.throttle !== 0) this.extForce.addScaled(fwd, s.throttle * K.THROTTLE_AIR_ACCEL);
+    if (s.throttle !== 0) {
+      const a = s.throttle * K.THROTTLE_AIR_ACCEL, F = this.extForce;
+      F.x += fwd.x * a; F.y += fwd.y * a; F.z += fwd.z * a;
+    }
   }
 
   // Car::_UpdateJump
@@ -550,13 +595,15 @@ export class Car {
     } else if (this.isOnGround && jumpPressed) {
       this.isJumping = true;
       this.jumpTime = 0;
-      this.vel.addScaled(_up, K.JUMP_IMMEDIATE_VEL);
+      const v = this.vel, a = K.JUMP_IMMEDIATE_VEL;
+      v.x += _up.x * a; v.y += _up.y * a; v.z += _up.z * a;
       this.events.push('jump');
     }
     if (this.isJumping) {
       this.hasJumped = true;
       // extra long-jump force
-      this.extForce.addScaled(_up, K.JUMP_ACCEL * (this.jumpTime < T_JUMP_MIN ? K.JUMP_PRE_MIN_ACCEL_SCALE : 1));
+      const a = K.JUMP_ACCEL * (this.jumpTime < T_JUMP_MIN ? K.JUMP_PRE_MIN_ACCEL_SCALE : 1), F = this.extForce;
+      F.x += _up.x * a; F.y += _up.y * a; F.z += _up.z * a;
     }
     if (this.isJumping || this.hasJumped) this.jumpTime = f32(this.jumpTime + f32(dt));
   }
@@ -571,7 +618,8 @@ export class Car {
         this.autoFlipTimer = f32(K.AUTOFLIP_TIME * (absRoll / Math.PI));
         this.autoFlipTorqueScale = roll > 0 ? 1 : -1;
         this.isAutoFlipping = true;
-        this.vel.addScaled(_up, -K.AUTOFLIP_IMPULSE);
+        const v = this.vel, a = -K.AUTOFLIP_IMPULSE;
+        v.x += _up.x * a; v.y += _up.y * a; v.z += _up.z * a;
         this.events.push('autoflip');
       }
     }
@@ -580,7 +628,8 @@ export class Car {
         this.isAutoFlipping = false;
         this.autoFlipTimer = 0;
       } else {
-        this.angVel.addScaled(_fwd, K.AUTOFLIP_TORQUE * this.autoFlipTorqueScale * dt);
+        const w = this.angVel, a = K.AUTOFLIP_TORQUE * this.autoFlipTorqueScale * dt;
+        w.x += _fwd.x * a; w.y += _fwd.y * a; w.z += _fwd.z * a;
         this.autoFlipTimer = f32(this.autoFlipTimer - f32(dt));
       }
     }
@@ -613,7 +662,8 @@ export class Car {
             this._dodge(tickTimeScale);
             this.events.push('flip');
           } else {
-            this.vel.addScaled(_up, K.JUMP_IMMEDIATE_VEL);
+            const v = this.vel, a = K.JUMP_IMMEDIATE_VEL;
+            v.x += _up.x * a; v.y += _up.y * a; v.z += _up.z * a;
             this.hasDoubleJumped = true;
             this.events.push('doubleJump');
           }
@@ -668,11 +718,13 @@ export class Car {
     // crossRight = groundUp x forward, crossForward = groundDown x crossRight
     const crossRight = _a.crossVectors(groundUp, fwd);
     const crossForward = _b.crossVectors(crossRight, groundUp); // (-groundUp) x crossRight
-    const rightTorqueFactor = 1 - clamp(right.dot(crossRight), 0, 1);
-    const forwardTorqueFactor = 1 - clamp(fwd.dot(crossForward), 0, 1);
-    const tr = (right.dot(groundUp) >= 0 ? -1 : 1) * rightTorqueFactor * K.AUTOROLL_TORQUE;
-    const tf = (fwd.dot(groundUp) >= 0 ? 1 : -1) * forwardTorqueFactor * K.AUTOROLL_TORQUE;
-    this.extForce.addScaled(groundUp, -K.AUTOROLL_FORCE);
+    const dr = (right.x * crossRight.x + right.y * crossRight.y + right.z * crossRight.z), df = (fwd.x * crossForward.x + fwd.y * crossForward.y + fwd.z * crossForward.z);
+    const rightTorqueFactor = 1 - (dr < 0 ? 0 : dr > 1 ? 1 : dr);
+    const forwardTorqueFactor = 1 - (df < 0 ? 0 : df > 1 ? 1 : df);
+    const tr = ((right.x * groundUp.x + right.y * groundUp.y + right.z * groundUp.z) >= 0 ? -1 : 1) * rightTorqueFactor * K.AUTOROLL_TORQUE;
+    const tf = ((fwd.x * groundUp.x + fwd.y * groundUp.y + fwd.z * groundUp.z) >= 0 ? 1 : -1) * forwardTorqueFactor * K.AUTOROLL_TORQUE;
+    const F = this.extForce, a = -K.AUTOROLL_FORCE;
+    F.x += groundUp.x * a; F.y += groundUp.y * a; F.z += groundUp.z * a;
     this.extTorque.x += fwd.x * tr + right.x * tf;
     this.extTorque.y += fwd.y * tr + right.y * tf;
     this.extTorque.z += fwd.z * tr + right.z * tf;
@@ -697,7 +749,8 @@ export class Car {
       const w = wheels[i];
       if (w.suspForce === 0) continue;
       _r.subVectors(w.point, this.pos);
-      _c.copy(w.normal).scale(w.suspForce * dt + w.extraPushback);
+      const j = w.suspForce * dt + w.extraPushback, n = w.normal;
+      _c.x = n.x * j; _c.y = n.y * j; _c.z = n.z * j;
       this.applyImpulse(_c, _r);
     }
   }
@@ -710,8 +763,9 @@ export class Car {
       const w = wheels[i];
       if (w.impulse.isZero()) continue;
       _r.subVectors(w.point, this.pos);
-      _r.addScaled(up, -up.dot(_r));
-      _c.copy(w.impulse).scale(dt);
+      const d = (up.x * _r.x + up.y * _r.y + up.z * _r.z), imp = w.impulse;
+      _r.x -= up.x * d; _r.y -= up.y * d; _r.z -= up.z * d;
+      _c.x = imp.x * dt; _c.y = imp.y * dt; _c.z = imp.z * dt;
       this.applyImpulse(_c, _r);
     }
   }
@@ -728,7 +782,8 @@ export class Car {
     this.boostingTime = this.isBoosting ? f32(this.boostingTime + f32(dt)) : 0;
     if (this.isBoosting) {
       if (!this._unlimitedBoost) this.boost = Math.max(f32(this.boost - f32(f32(K.BOOST_USED_PER_SECOND) * f32(dt))), 0);
-      this.extForce.addScaled(_fwd, this.isOnGround ? K.BOOST_ACCEL_GROUND : K.BOOST_ACCEL_AIR);
+      const a = this.isOnGround ? K.BOOST_ACCEL_GROUND : K.BOOST_ACCEL_AIR, F = this.extForce;
+      F.x += _fwd.x * a; F.y += _fwd.y * a; F.z += _fwd.z * a;
     }
     this.boost = Math.min(this.boost, K.BOOST_MAX);
     if (this.isBoosting && !was) this.events.push('boostStart');
@@ -755,8 +810,18 @@ export class Car {
   finishPhysicsTick() {
     if (this.isDemoed) return;
     const c = this.velocityImpulseCache;
-    if (c.x !== 0 || c.y !== 0 || c.z !== 0) { this.vel.add(c); c.set(0, 0, 0); }
-    this.clampVelocities();
+    const v = this.vel, w = this.angVel;
+    if (c.x !== 0 || c.y !== 0 || c.z !== 0) { v.x += c.x; v.y += c.y; v.z += c.z; c.x = 0; c.y = 0; c.z = 0; }
+    // limit velocities (written out: see the note at _k)
+    const v2 = v.x * v.x + v.y * v.y + v.z * v.z, w2 = w.x * w.x + w.y * w.y + w.z * w.z;
+    if (v2 > K.CAR_MAX_SPEED * K.CAR_MAX_SPEED) {
+      const f = K.CAR_MAX_SPEED / Math.sqrt(v2);
+      v.x *= f; v.y *= f; v.z *= f;
+    }
+    if (w2 > K.CAR_MAX_ANG_SPEED * K.CAR_MAX_ANG_SPEED) {
+      const f = K.CAR_MAX_ANG_SPEED / Math.sqrt(w2);
+      w.x *= f; w.y *= f; w.z *= f;
+    }
   }
 
   clampVelocities() {
