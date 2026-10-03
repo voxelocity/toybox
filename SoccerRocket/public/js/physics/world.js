@@ -2,32 +2,66 @@
 //
 // World.step runs one tick in RocketSim's order (Arena::Step, MIT,
 // Copyright (c) 2022 ZealanL, on Bullet's btDiscreteDynamicsWorld, zlib):
-//   1. ball sleep check (exactly zero velocity and spin: not simulated)
-//   2. car.preTick (vehicle: wheel rays via raycastWheel, immediate impulses,
-//      forces/torques accumulated into extForce / extTorque as accelerations)
+//   1. ball sleep check: a ball with exactly zero velocity and spin sleeps
+//      (no gravity, no arena contacts) until something touches it
+//   2. per car: demo respawn timer, then car.preTick (vehicle update)
 //   3. boost pads preTick (cooldowns)
-//   4. gravity (as a force) on simulated bodies, ball drag on the velocity
-//   5. collision detection on the start-of-tick transforms, with RocketSim's
-//      contact callbacks: car-ball extra impulse (Ball::_OnHit) into the ball's
-//      velocity cache, car-car bumps / demos (per contact point) into the
-//      victim's velocity cache, car-world contact flag + normal for the next
-//      tick, ball-world points marked special
+//   4. gravity (as a force) on simulated bodies, ball drag on its velocity
+//   5. collision detection on the start-of-tick transforms with RocketSim's
+//      contact callbacks (onBallWorld / onCarWorld / onCarBall / onCarCar)
 //   6. one shared sequential-impulse solve of all contacts (solver.js:
-//      10 split-impulse + 10 velocity iterations), external force impulses,
-//      then transforms integrated (exponential map)
-//   7. per car: postTick (supersonic, bump cooldown), finishPhysicsTick
-//      (velocity cache, single clamp), boost pad collision; pads postTick
-//      (give boost); ball finishPhysicsTick; goal check.
+//      10 split-impulse + 10 velocity iterations, external force impulses),
+//      then every simulated body's transform is integrated (exponential map)
+//   7. per car: postTick, finishPhysicsTick, boost pad collision; pads
+//      postTick (give boost); ball finishPhysicsTick; goal check.
 //
-// Car interface (see car.js header): preTick / postTick / finishPhysicsTick,
-// extForce / extTorque (accelerations), velocityImpulseCache, worldContact
-// {hasContact, normal}, inWorld. Wheel rays: raycastWheel(from, dir, len,
-// ignoreCar, out) -> bool; out (contacts.js makeRayHit()) gets t, fraction,
-// point px..pz, normal nx..nz facing the ray (arena triangles hit from either
-// side), type (HIT_STATIC / HIT_BALL / HIT_CAR), body, and the body's
-// velocity at the point vx..vz.
+// ---- Car <-> World interface (what car.js must provide and may rely on) ----
+// Body state (World, the solver and the narrowphase read and write these):
+//   pos (V3), quat (Quat), R (M3, rotation from quat; the solver refreshes it
+//   after integrating), vel, angVel (uu/s, rad/s, world frame), mass,
+//   invMass, invInertiaLocal (V3, body-frame diagonal of the inverse inertia),
+//   friction / restitution (Bullet body materials, combined per contact),
+//   half (V3, box half extents incl. margin), margin, hbOffset (box centre in
+//   the car frame), contactThreshold (Bullet contact breaking threshold), id,
+//   team, sb (solver scratch, owned by solver.js).
+// Call order within World.step:
+//   car.preTick(world, dt)  once, on the start-of-tick transform, only for
+//     cars that are simulated this tick (not demolished, not carsFrozen).
+//     World has already zeroed extForce / extTorque and car.events. The car:
+//     - casts its wheel rays with world.raycastWheel(from, dir, len, car, hit)
+//       (closest hit on the arena, two-sided, the ball and other cars' boxes;
+//       hit = makeRayHit(): t, fraction, px..pz, normal nx..nz facing the
+//       ray, type HIT_STATIC / HIT_BALL / HIT_CAR, body, and that body's
+//       velocity at the hit point vx..vz; a ray that starts inside the ball or
+//       a car does not hit it, a demolished car blocks nothing);
+//     - applies what RocketSim applies as impulses or by setting the velocity
+//       (suspension, tyre friction, jumps, dodges, auto-flip, flip z-damping)
+//       to vel / angVel directly;
+//     - adds what RocketSim applies as forces / torques (sticky, boost, jump
+//       hold, air throttle, air control, flip torque, auto-roll) to extForce
+//       (linear ACCELERATION, uu/s^2) and extTorque (angular ACCELERATION,
+//       rad/s^2, world frame); World adds gravity and the solver integrates
+//       both as extForce*dt and extTorque*dt, like Bullet's F/m*dt and
+//       I^-1*tau*dt;
+//     - reads worldContact {hasContact, normal} (set by the previous tick's
+//       car-world contacts, before internal-edge correction) and clears
+//       worldContact.hasContact before returning;
+//     - pushes event names onto car.events ('jump', 'land', ...).
+//   (collision detection)  World's callbacks may set isDemoed / respawnTimer
+//     (car.demolish()), add bump velocity to velocityImpulseCache (V3, uu/s),
+//     and read/write bumpCooldown, bumpOther (id of the last car bumped),
+//     ballHitTick (tick of the last extra ball impulse), isSupersonic,
+//     isOnGround and vel.
+//   (solve + integrate)  vel, angVel, pos, quat and R are updated.
+//   car.postTick(world, dt)  supersonic state, bump cooldown countdown.
+//   car.finishPhysicsTick()  adds velocityImpulseCache to vel, clears it, then
+//     clamps vel (2300 uu/s) and angVel (5.5 rad/s): the only clamp.
+//   Neither post call runs for a demolished car; its body is frozen with the
+//   velocity it had until World respawns it (car.reset) when respawnTimer
+//   reaches zero. inWorld is true while the car is simulated this tick.
 //
-// Events (world.events, rebuilt every tick, read by match / effects / audio):
+// Events (world.events, rebuilt every tick, read by match / effects / audio;
+// replays keep them, so they are new objects, not pooled):
 //   ballHit {car, point, normal, dv, speed}, ballBounce {speed, point, normal},
 //   carWorld {car, speed}, carCar {a, b, speed, point}, bump {attacker, victim,
 //   speed, point}, demo {attacker, victim, point}, pad {pad, car},
@@ -169,7 +203,9 @@ export class World {
 
     // ---- 3. boost pad pre-tick ------------------------------------------------------
     if (nc > 0) {
-      for (const p of this.pads) {
+      const pads = this.pads;
+      for (let i = 0; i < pads.length; i++) {
+        const p = pads[i];
         if (p.timer > 0) p.timer = Math.max(p.timer - dt, 0);
         const was = p.active;
         p.active = p.timer === 0;
@@ -285,12 +321,12 @@ export class World {
   // ------------------------------------------------------------------ boost pads
   // BoostPadGrid::CheckCollision + BoostPad::_CheckCollide (last colliding car wins)
   _padsCheck(car) {
-    if (car.boost >= K.BOOST_MAX && !this.unlimitedBoost) return;
     if (car.boost >= K.BOOST_MAX) return;
-    const P = K.BOOST_PAD, pos = car.pos;
+    const P = K.BOOST_PAD, pos = car.pos, pads = this.pads;
     if (pos.z > P.GRID_MAX_Z) return;
     let aabb = false;
-    for (const p of this.pads) {
+    for (let i = 0; i < pads.length; i++) {
+      const p = pads[i];
       let hit = false;
       if (p.prevLockedId === car.id) {
         // car AABB (compound box) vs the pad box
@@ -309,8 +345,9 @@ export class World {
 
   // BoostPad::_PostTickUpdate
   _padsPostTick(ev) {
-    const P = K.BOOST_PAD;
-    for (const p of this.pads) {
+    const P = K.BOOST_PAD, pads = this.pads;
+    for (let i = 0; i < pads.length; i++) {
+      const p = pads[i];
       let lockedId = -1;
       const car = p.lockedCar;
       if (car) {
