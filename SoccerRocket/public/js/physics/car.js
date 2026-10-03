@@ -44,16 +44,23 @@ export class Car {
     this.preset = P;
     const HB = P.simHitbox || P.hitbox, OF = P.simOffset || P.offset;
     this.hitbox = new V3(HB[0], HB[1], HB[2]);
-    this.half = new V3(HB[0] / 2, HB[1] / 2, HB[2] / 2);
+    // btBoxShape as RocketSim builds it: the constructor takes Bullet's default
+    // margin (0.04 bt = 2 uu) off the half extents, then setSafeMargin lowers
+    // the margin to 0.1 * the smallest half extent (1.933 uu) without adding
+    // the difference back (RocketSim made setMargin non-virtual). So the core
+    // box is half - 2 uu, the margin 1.933 uu, and every query that includes
+    // the margin (supports, AABB, box-box, rays, inertia) sees half - 0.067 uu.
+    const BT_DEFAULT_MARGIN = 0.04 * 50;
+    this.margin = Math.min(BT_DEFAULT_MARGIN, 0.1 * Math.min(HB[0], HB[1], HB[2]) / 2);
+    const shrink = BT_DEFAULT_MARGIN - this.margin;
+    this.half = new V3(HB[0] / 2 - shrink, HB[1] / 2 - shrink, HB[2] / 2 - shrink); // getHalfExtentsWithMargin
     this.hbOffset = new V3(OF[0], OF[1], OF[2]);
-    // btBoxShape safe margin: min(0.04 bt, 0.1 * smallest half extent)
-    this.margin = Math.min(0.04 * 50, 0.1 * Math.min(this.half.x, this.half.y, this.half.z));
     // Bullet relative contact threshold: 0.02 * (bounding radius + |centre|)
     this.contactThreshold = 0.02 * (this.half.len() + this.hbOffset.len());
     this.mass = K.CAR_MASS;
     this.invMass = 1 / K.CAR_MASS;
-    // btBoxShape::calculateLocalInertia on the full (margin-inclusive) box
-    const [L, W, H] = HB, m = K.CAR_MASS;
+    // btBoxShape::calculateLocalInertia (getHalfExtentsWithMargin)
+    const L = 2 * this.half.x, W = 2 * this.half.y, H = 2 * this.half.z, m = K.CAR_MASS;
     this.invInertia = new V3(12 / (m * (W * W + H * H)), 12 / (m * (L * L + H * H)), 12 / (m * (L * L + W * W)));
     this.invInertiaLocal = this.invInertia;
     this.friction = K.CAR_COLLISION_FRICTION;

@@ -29,7 +29,7 @@ export const PHYSICS_DIR = PHYS;
 const v3 = (a, def) => (Array.isArray(a) && a.length >= 3 ? a : def);
 const arr = (v) => [v.x, v.y, v.z];
 
-function quatFromBasis(f, l, u, q) {
+export function quatFromBasis(f, l, u, q) {
   // rotation matrix columns f, l, u -> quaternion (Shepperd)
   const m00 = f[0], m10 = f[1], m20 = f[2];
   const m01 = l[0], m11 = l[1], m21 = l[2];
@@ -68,7 +68,11 @@ export function cruiseThrottle(target, fwdSpeed) {
   return t < 0.01 ? 0.01 : t > 1 ? 1 : t;
 }
 
-export function runScenarioJS(sc) {
+/**
+ * opts.beforeStep(t, world, cars): called before tick t + 1 is simulated
+ * (after the controls are set), e.g. to overwrite body states (onestep.mjs).
+ */
+export function runScenarioJS(sc, opts = {}) {
   const ticks = sc.ticks ?? 120;
   const every = Math.max(1, sc.every ?? 1);
   const w = new World();
@@ -157,6 +161,7 @@ export function runScenarioJS(sc) {
         jump: !!c.jump, boost: !!c.boost, handbrake: !!c.handbrake,
       });
     });
+    if (opts.beforeStep) opts.beforeStep(t, w, cars);
     const ev = w.step();
     for (const e of ev) {
       if (e.type === 'ballHit') events.push({ tick: t + 1, type: 'ballHit', car: cars.indexOf(e.car), extraVel: null });
@@ -175,6 +180,6 @@ if (isMain) {
   const scs = [];
   let asArray = docs.length > 1;
   for (const d of docs) { if (Array.isArray(d)) { asArray = true; scs.push(...d); } else scs.push(d); }
-  const res = scs.map(runScenarioJS);
+  const res = scs.map((s) => runScenarioJS(s));
   process.stdout.write(JSON.stringify(asArray ? res : res[0]) + '\n');
 }
