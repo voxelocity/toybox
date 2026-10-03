@@ -107,7 +107,7 @@ documented values:
 | Jump | 291.7 instant + 1458.3 uu/s² for up to 0.2 s (~235 uu full jump, ~475 double) |
 | Dodge | 500 uu/s impulse (speed-scaled side/back), 0.65 s torque, z-damping, flip cancels |
 | Air control | torque (pitch 130, yaw 95, roll 400) × 0.0959, damping 30/20/50, max 5.5 rad/s |
-| Turning | steer angle curve calibrated to the measured curvature table (0.00398 @500 … 0.00088 @2300) |
+| Turning | RocketSim's steer angle curve and tyre model (btVehicleRL): steady curvature 0.00396 @500 … 0.00090 @2200 |
 | Ball | r 91.25, mass 1/6 car, restitution 0.6, friction 0.35, drag 3%/s, max 6000 uu/s |
 | Hits | rigid impulse plus the extra "hit" impulse curve (0.65 → 0.30) |
 | Demos & bumps | supersonic (≥2200) front-bumper hits demolish; bump velocity curves for others |
@@ -164,7 +164,6 @@ npm install                    # dev tools only: three (for vendoring), esbuild,
 npm test                       # physics checks
 node tests/bots.mjs 3 pro 2    # headless bot match
 node tools/shot.mjs out.png "?q=high" 1280 720 4000 "app.startFreeplay()"
-node tools/calibrate-steer.mjs # re-derive the steering curve
 node tools/vendor-three.mjs    # refresh public/vendor/three
 ```
 
