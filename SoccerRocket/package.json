@@ -1,0 +1,17 @@
+{
+  "name": "soccer-rocket",
+  "version": "1.0.0",
+  "private": true,
+  "description": "SoccerRocket - rocket-powered car soccer for the browser",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node tests/physics.mjs"
+  },
+  "engines": { "node": ">=18" },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "playwright-core": "^1.56.0",
+    "three": "^0.186.1"
+  }
+}

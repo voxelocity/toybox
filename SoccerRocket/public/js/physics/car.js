@@ -1,0 +1,518 @@
+// Car rigid body with raycast suspension, friction curves, throttle / brake,
+// steering, boost, jumps, dodges and air control at 120 Hz.
+import { V3, Quat, M3, applyInvInertia, curve, clamp, sign } from './math.js';
+import * as K from './constants.js';
+
+const _v = new V3(), _w = new V3(), _r = new V3(), _t = new V3(), _a = new V3(), _b = new V3(), _c = new V3();
+const _fwd = new V3(), _left = new V3(), _up = new V3();
+const _hit = { t: 0, nx: 0, ny: 0, nz: 0 };
+
+export function makeControls() {
+  return { throttle: 0, steer: 0, pitch: 0, yaw: 0, roll: 0, jump: false, boost: false, handbrake: false };
+}
+
+export class Car {
+  constructor(id, team, preset = 'octane') {
+    this.id = id;
+    this.team = team; // 0 blue, 1 orange
+    this.name = '';
+    const P = K.CAR_PRESETS[preset];
+    this.preset = P;
+    this.hitbox = new V3(P.hitbox[0], P.hitbox[1], P.hitbox[2]);
+    this.half = new V3(P.hitbox[0] / 2, P.hitbox[1] / 2, P.hitbox[2] / 2);
+    this.hbOffset = new V3(P.offset[0], P.offset[1], P.offset[2]);
+    this.mass = K.CAR_MASS;
+    this.invMass = 1 / K.CAR_MASS;
+    const [L, W, H] = P.hitbox, m = K.CAR_MASS;
+    this.invInertia = new V3(12 / (m * (W * W + H * H)), 12 / (m * (L * L + H * H)), 12 / (m * (L * L + W * W)));
+
+    this.wheels = [];
+    for (const [i, def] of [[0, P.front], [1, P.front], [2, P.back], [3, P.back]]) {
+      const side = (i % 2 === 0) ? 1 : -1; // even = left (+y), odd = right
+      this.wheels.push({
+        front: i < 2,
+        local: new V3(def.x, def.y * side, def.z),
+        radius: def.radius,
+        rest: def.rest - K.MAX_SUSPENSION_TRAVEL,
+        scale: i < 2 ? K.SUSPENSION_FORCE_SCALE_FRONT : K.SUSPENSION_FORCE_SCALE_BACK,
+        contact: false,
+        normal: new V3(0, 0, 1),
+        point: new V3(),
+        susLen: def.rest - K.MAX_SUSPENSION_TRAVEL,
+        steer: 0,
+        spin: 0,          // visual wheel rotation (rad)
+        latFriction: 1, longFriction: 1,
+        sideImpulse: 0, fwdImpulse: 0,
+        axle: new V3(), fwdWS: new V3(),
+        slip: 0,
+      });
+    }
+
+    this.pos = new V3();
+    this.vel = new V3();
+    this.angVel = new V3();
+    this.quat = new Quat();
+    this.R = new M3();
+    this.controls = { throttle: 0, steer: 0, pitch: 0, yaw: 0, roll: 0, jump: false, boost: false, handbrake: false };
+    this.lastJump = false;
+    this.reset(0, 0, K.CAR_SPAWN_REST_Z, Math.PI / 2);
+  }
+
+  reset(x, y, z, yaw) {
+    this.pos.set(x, y, z);
+    this.vel.set(0, 0, 0);
+    this.angVel.set(0, 0, 0);
+    this.quat.setEuler(yaw, 0, 0);
+    this.R.fromQuat(this.quat);
+    this.boost = K.BOOST_SPAWN_AMOUNT;
+    this.isOnGround = true;
+    this.numContacts = 4;
+    this.isJumping = false; this.hasJumped = false; this.jumpTime = 0;
+    this.hasDoubleJumped = false; this.hasFlipped = false; this.isFlipping = false; this.flipTime = 0;
+    this.flipRelTorque = new V3();
+    this.dodgeDir = new V3();
+    this.airTime = 0; this.airTimeSinceJump = 0;
+    this.isBoosting = false; this.boostingTime = 0;
+    this.handbrakeVal = 0;
+    this.isSupersonic = false; this.supersonicTime = 0;
+    this.isDemoed = false; this.respawnTimer = 0;
+    this.isAutoFlipping = false; this.autoFlipTimer = 0; this.autoFlipScale = 0;
+    this.worldContact = false; this.worldNormal = new V3(0, 0, 1);
+    this.bumpCooldown = 0; this.bumpOther = -1;
+    this.ballHitTick = -10;
+    this.lastJump = false;
+    this.events = this.events || [];
+    for (const w of this.wheels || []) { w.contact = true; w.susLen = w.rest - 1.9; }
+    this.wasOnGround = true;
+    this.forwardSpeed = 0;
+    this.lastLandSpeed = 0;
+    this.ballWheelContacts = 0;
+  }
+
+  get forward() { return this.R.col(0, new V3()); }
+  get up() { return this.R.col(2, new V3()); }
+
+  hitboxCenter(out) {
+    return this.R.mulV(this.hbOffset, out).add(this.pos);
+  }
+
+  applyImpulseAt(jx, jy, jz, rx, ry, rz) {
+    this.vel.x += jx * this.invMass; this.vel.y += jy * this.invMass; this.vel.z += jz * this.invMass;
+    _a.set(ry * jz - rz * jy, rz * jx - rx * jz, rx * jy - ry * jx);
+    applyInvInertia(this.R, this.invInertia, _a, _a);
+    this.angVel.add(_a);
+  }
+
+  // effective mass denominator for an impulse along unit dir at offset r
+  invEffMass(rx, ry, rz, dx, dy, dz) {
+    _a.set(ry * dz - rz * dy, rz * dx - rx * dz, rx * dy - ry * dx);
+    applyInvInertia(this.R, this.invInertia, _a, _b);
+    _c.crossVectors(_b, _r.set(rx, ry, rz));
+    return this.invMass + _c.x * dx + _c.y * dy + _c.z * dz;
+  }
+
+  velAt(rx, ry, rz, out) {
+    const w = this.angVel;
+    return out.set(this.vel.x + w.y * rz - w.z * ry, this.vel.y + w.z * rx - w.x * rz, this.vel.z + w.x * ry - w.y * rx);
+  }
+
+  demolish() {
+    this.isDemoed = true;
+    this.respawnTimer = K.DEMO_RESPAWN_TIME;
+    this.vel.set(0, 0, 0); this.angVel.set(0, 0, 0);
+    this.isBoosting = false;
+  }
+
+  /**
+   * Pre-integration update: wheel contacts and all control forces.
+   * world: { mesh, ball, unlimitedBoost, tick }
+   */
+  preStep(world, dt) {
+    const ctl = this.controls;
+    this.events.length = 0;
+    if (this.isDemoed) return;
+    if (this.bumpCooldown > 0) this.bumpCooldown -= dt;
+
+    const R = this.R.fromQuat(this.quat);
+    const fwd = R.col(0, _fwd), left = R.col(1, _left), up = R.col(2, _up);
+    const m = this.mass;
+
+    // ---- wheel ray casts -----------------------------------------------
+    let n = 0;
+    const upSum = _t.set(0, 0, 0);
+    const mesh = world.mesh;
+    for (const w of this.wheels) {
+      R.mulV(w.local, _v).add(this.pos); // hardpoint
+      const len = w.rest + w.radius;
+      w.hard = w.hard || new V3();
+      w.hard.copy(_v);
+      if (mesh.raycast(_v.x, _v.y, _v.z, -up.x, -up.y, -up.z, len, _hit)) {
+        w.contact = true;
+        w.normal.set(_hit.nx, _hit.ny, _hit.nz);
+        w.susLen = _hit.t - w.radius;
+        w.point.copy(_v).addScaled(up, -_hit.t);
+        upSum.add(w.normal);
+        n++;
+      } else {
+        w.contact = false;
+        w.susLen = w.rest;
+      }
+    }
+    // wheels touching the ball (used for flip resets)
+    this.ballWheelContacts = 0;
+    if (world.ball) {
+      const bp = world.ball.pos, br = K.BALL_RADIUS;
+      for (const w of this.wheels) {
+        R.mulV(w.local, _v).add(this.pos).addScaled(up, -(w.rest * 0.6));
+        if (_v.distTo(bp) < br + w.radius + 6) this.ballWheelContacts++;
+      }
+    }
+
+    const wasOnGround = this.isOnGround;
+    this.numContacts = n;
+    this.isOnGround = n >= 3;
+    if (this.isOnGround && !wasOnGround) {
+      this.lastLandSpeed = Math.abs(this.vel.dot(upSum.clone().normalize()));
+      this.events.push('land');
+    }
+    const forwardSpeed = this.vel.dot(fwd);
+    const absFwd = Math.abs(forwardSpeed);
+    this.forwardSpeed = forwardSpeed;
+
+    // ---- handbrake ---------------------------------------------------------
+    if (ctl.handbrake) this.handbrakeVal = Math.min(1, this.handbrakeVal + K.POWERSLIDE_RISE_RATE * dt);
+    else this.handbrakeVal = Math.max(0, this.handbrakeVal - K.POWERSLIDE_FALL_RATE * dt);
+
+    // ---- boost state ---------------------------------------------------------
+    const hasBoost = world.unlimitedBoost || this.boost > 0;
+    if (hasBoost && (ctl.boost || (this.isBoosting && this.boostingTime < K.BOOST_MIN_TIME))) {
+      if (!this.isBoosting) this.events.push('boostStart');
+      this.isBoosting = true;
+      this.boostingTime += dt;
+      if (!world.unlimitedBoost) this.boost = Math.max(0, this.boost - K.BOOST_USED_PER_SECOND * dt);
+    } else {
+      if (this.isBoosting) this.events.push('boostEnd');
+      this.isBoosting = false; this.boostingTime = 0;
+    }
+
+    // ---- throttle / brake ------------------------------------------------------
+    let realThrottle = clamp(ctl.throttle, -1, 1);
+    if (this.isBoosting) realThrottle = 1;
+    let engineThrottle = realThrottle, realBrake = 0;
+    if (Math.abs(realThrottle) >= K.THROTTLE_DEADZONE) {
+      if (absFwd > 0 && sign(realThrottle) !== sign(forwardSpeed)) {
+        realBrake = 1;
+        if (absFwd > 0.01) engineThrottle = 0;
+      }
+    } else {
+      engineThrottle = 0;
+      realBrake = absFwd < K.STOPPING_FORWARD_VEL ? 1 : K.COASTING_BRAKE_FACTOR;
+    }
+    const driveScale = curve(K.DRIVE_SPEED_TORQUE_CURVE, absFwd);
+    const engineForce = engineThrottle * m * (K.THROTTLE_ACCEL / 4) * driveScale;
+    const brakeImpulse = realBrake * m * (K.BRAKE_ACCEL / 4) * dt;
+
+    // ---- steering --------------------------------------------------------------
+    let steerAngle = curve(K.STEER_ANGLE_CURVE, absFwd);
+    if (this.handbrakeVal) steerAngle += (curve(K.POWERSLIDE_STEER_ANGLE_CURVE, absFwd) - steerAngle) * this.handbrakeVal;
+    steerAngle *= clamp(ctl.steer, -1, 1);
+    this.wheels[0].steer = this.wheels[1].steer = steerAngle;
+
+    // ---- suspension ------------------------------------------------------------
+    const jumpPressed = ctl.jump && !this.lastJump;
+    const jumpingOff = this.isJumping || (this.isOnGround && jumpPressed);
+    for (const w of this.wheels) {
+      if (!w.contact) continue;
+      _r.subVectors(w.point, this.pos);
+      const nrm = w.normal;
+      const denom = -(nrm.dot(up));
+      let relVel = 0, clipped = 10;
+      if (denom < -0.1) {
+        const inv = -1 / denom;
+        this.velAt(_r.x, _r.y, _r.z, _v);
+        relVel = nrm.dot(_v) * inv;
+        clipped = inv;
+      }
+      let force = K.SUSPENSION_STIFFNESS * (w.rest - w.susLen) * clipped;
+      force -= (relVel < 0 ? K.WHEELS_DAMPING_COMPRESSION : K.WHEELS_DAMPING_RELAXATION) * relVel;
+      force *= w.scale;
+      if (force < 0) force = 0;
+      w.suspForce = force;
+      const j = force * dt;
+      this.applyImpulseAt(nrm.x * j, nrm.y * j, nrm.z * j, _r.x, _r.y, _r.z);
+    }
+
+    // ---- tyre friction -----------------------------------------------------------
+    let wheelsOnGround = 0;
+    for (const w of this.wheels) if (w.contact) wheelsOnGround++;
+    const fullStick = realThrottle !== 0 || absFwd > K.STOPPING_FORWARD_VEL;
+    for (const w of this.wheels) {
+      w.sideImpulse = 0; w.fwdImpulse = 0;
+      if (!w.contact) { w.latFriction = w.longFriction = 0; continue; }
+      // wheel axes (steered). Local forward (cos, -sin) turns right for +steer.
+      const s = w.steer, cs = Math.cos(s), sn = Math.sin(s);
+      R.mulXYZ(-sn, -cs, 0, w.axle);              // wheel right axis (unprojected)
+      R.mulXYZ(cs, -sn, 0, _a);                   // wheel forward (unprojected)
+      // friction curve input, from the hardpoint velocity
+      _r.subVectors(w.hard, this.pos);
+      this.velAt(_r.x, _r.y, _r.z, _v);
+      const latDir = w.axle;
+      _b.crossVectors(latDir, w.normal); // longitudinal dir (sign irrelevant)
+      const baseFriction = Math.abs(_v.dot(latDir));
+      let input = 0;
+      if (baseFriction > 5) input = baseFriction / (Math.abs(_v.dot(_b)) + baseFriction);
+      w.slip = input;
+      let lat = curve(K.LAT_FRICTION_CURVE, input);
+      let long = curve(K.LONG_FRICTION_CURVE, input);
+      if (this.handbrakeVal) {
+        lat *= (K.HANDBRAKE_LAT_FRICTION_FACTOR - 1) * this.handbrakeVal + 1;
+        long *= (curve(K.HANDBRAKE_LONG_FRICTION_CURVE, input) - 1) * this.handbrakeVal + 1;
+      } else long = 1;
+      if (!fullStick) {
+        const ns = curve(K.NON_STICKY_FRICTION_CURVE, w.normal.z);
+        lat *= ns; long *= ns;
+      }
+      w.latFriction = lat; w.longFriction = long;
+
+      // project axle onto contact plane, forward = normal x axle
+      const ax = w.axle;
+      ax.addScaled(w.normal, -ax.dot(w.normal)).normalize();
+      w.fwdWS.crossVectors(w.normal, ax).normalize();
+
+      _r.subVectors(w.point, this.pos);
+      this.velAt(_r.x, _r.y, _r.z, _v);
+      // lateral: soft bilateral constraint
+      const kSide = this.invEffMass(_r.x, _r.y, _r.z, ax.x, ax.y, ax.z);
+      w.sideImpulse = -K.LATERAL_CONTACT_DAMPING * _v.dot(ax) / kSide * lat;
+      // longitudinal: engine or rolling friction / brakes
+      if (engineForce !== 0) {
+        w.fwdImpulse = engineForce * dt * long;
+      } else if (brakeImpulse > 0) {
+        const kF = this.invEffMass(_r.x, _r.y, _r.z, w.fwdWS.x, w.fwdWS.y, w.fwdWS.z);
+        let j = -_v.dot(w.fwdWS) / (kF * wheelsOnGround);
+        j = clamp(j, -brakeImpulse, brakeImpulse);
+        w.fwdImpulse = j * long;
+      }
+    }
+    for (const w of this.wheels) {
+      if (!w.contact) continue;
+      // Friction acts in the plane of the centre of mass (no pitch / roll
+      // torque from tyre forces, so cars do not dive or lean).
+      _r.subVectors(w.point, this.pos);
+      _r.addScaled(up, -up.dot(_r) * (1 - K.ROLL_INFLUENCE));
+      const jf = w.fwdImpulse, js = w.sideImpulse;
+      if (jf || js) {
+        this.applyImpulseAt(w.fwdWS.x * jf + w.axle.x * js, w.fwdWS.y * jf + w.axle.y * js, w.fwdWS.z * jf + w.axle.z * js, _r.x, _r.y, _r.z);
+      }
+    }
+
+    // ---- sticky force ----------------------------------------------------------------
+    if (n >= 3 && !jumpingOff) {
+      upSum.normalize();
+      let scale = K.STICKY_FORCE_BASE;
+      if (fullStick) scale += 1 - Math.abs(upSum.z);
+      this.vel.addScaled(upSum, scale * K.GRAVITY_Z * dt);
+    }
+
+    // ---- jumping -------------------------------------------------------------------
+    if (this.isOnGround) {
+      this.airTime = 0;
+      this.airTimeSinceJump = 0;
+      if (!this.isJumping) { this.hasJumped = false; }
+      this.hasDoubleJumped = false;
+      this.hasFlipped = false;
+      this.isFlipping = false;
+    } else {
+      this.airTime += dt;
+      if (this.hasJumped && !this.isJumping) this.airTimeSinceJump += dt;
+      else this.airTimeSinceJump = 0;
+    }
+    // flip reset: wheels on the ball
+    if (!this.isOnGround && this.ballWheelContacts >= 3 && (this.hasFlipped || this.hasDoubleJumped || this.hasJumped)) {
+      this.hasFlipped = false; this.hasDoubleJumped = false; this.hasJumped = false;
+      this.airTimeSinceJump = 0;
+      this.events.push('flipReset');
+    }
+
+    if (this.isOnGround && jumpPressed && !this.isJumping) {
+      this.isJumping = true; this.hasJumped = true; this.jumpTime = 0;
+      this.vel.addScaled(up, K.JUMP_IMMEDIATE_VEL);
+      this.events.push('jump');
+    }
+    if (this.isJumping) {
+      if (this.jumpTime < K.JUMP_MIN_TIME || (ctl.jump && this.jumpTime < K.JUMP_MAX_TIME)) {
+        const acc = K.JUMP_ACCEL * (this.jumpTime < K.JUMP_MIN_TIME ? K.JUMP_PRE_MIN_ACCEL_SCALE : 1);
+        this.vel.addScaled(up, acc * dt);
+      } else {
+        this.isJumping = false;
+      }
+      this.jumpTime += dt;
+    }
+
+    // second jump / dodge
+    if (!this.isOnGround && jumpPressed && !this.isJumping) {
+      const canSecond = !this.hasDoubleJumped && !this.hasFlipped &&
+        (!this.hasJumped || this.airTimeSinceJump < K.DOUBLEJUMP_MAX_DELAY);
+      if (canSecond) {
+        const mag = Math.abs(ctl.yaw) + Math.abs(ctl.pitch) + Math.abs(ctl.roll);
+        if (mag >= K.DODGE_DEADZONE) this._dodge(fwd);
+        else {
+          this.vel.addScaled(up, K.JUMP_IMMEDIATE_VEL);
+          this.hasDoubleJumped = true;
+          this.events.push('doubleJump');
+        }
+      }
+    }
+
+    // ---- auto-flip (turtle recovery) ----------------------------------------------------
+    if (n === 0 && this.worldContact && jumpPressed && up.dot(this.worldNormal) < -K.AUTOFLIP_NORMZ_THRESH) {
+      this.isAutoFlipping = true; this.autoFlipTimer = 0;
+      // roll toward whichever side is lower relative to the surface
+      this.autoFlipScale = left.dot(this.worldNormal) > 0 ? 1 : -1;
+      this.vel.addScaled(this.worldNormal, K.AUTOFLIP_IMPULSE);
+      this.events.push('autoflip');
+    }
+    if (this.isAutoFlipping) {
+      this.autoFlipTimer += dt;
+      if (this.autoFlipTimer > K.AUTOFLIP_TIME + 0.2 || (this.isOnGround && this.autoFlipTimer > 0.1)) this.isAutoFlipping = false;
+      else {
+        // spin about forward axis at max rate
+        const along = this.angVel.dot(fwd);
+        this.angVel.addScaled(fwd, this.autoFlipScale * K.CAR_MAX_ANG_SPEED - along);
+      }
+    }
+
+    // ---- air control and dodge torque ------------------------------------------------
+    if (!this.isOnGround) this._airTorque(dt, n === 0, fwd, left, up);
+
+    // ---- auto-roll: partial wheel contact pulls the car onto the surface ----------------
+    if (n > 0 && n < 4 && !this.isJumping) {
+      upSum.normalize();
+      _a.crossVectors(up, upSum); // rotation axis toward the surface normal
+      this.angVel.addScaled(_a, K.AUTOROLL_TORQUE * K.CAR_TORQUE_SCALE * dt);
+      this.vel.addScaled(upSum, -K.AUTOROLL_FORCE * dt);
+    }
+
+    // ---- boost force -----------------------------------------------------------------
+    if (this.isBoosting) {
+      const acc = this.isOnGround ? K.BOOST_ACCEL_GROUND : K.BOOST_ACCEL_AIR;
+      this.vel.addScaled(fwd, acc * dt);
+    }
+    // air throttle
+    if (n === 0) this.vel.addScaled(fwd, clamp(ctl.throttle, -1, 1) * K.THROTTLE_AIR_ACCEL * dt);
+
+    // ---- gravity ---------------------------------------------------------------------
+    this.vel.z += K.GRAVITY_Z * dt;
+
+    // flip z-damping
+    if (this.isFlipping) {
+      this.flipTime += dt;
+      if (this.flipTime >= K.FLIP_Z_DAMP_START && (this.vel.z < 0 || this.flipTime < K.FLIP_Z_DAMP_END)) {
+        this.vel.z *= Math.pow(1 - K.FLIP_Z_DAMP_120, dt * 120);
+      }
+    } else if (this.hasFlipped) this.flipTime += dt;
+
+    this.clampVelocities();
+
+    // ---- supersonic ------------------------------------------------------------------
+    const speed = this.vel.len();
+    if (speed >= K.SUPERSONIC_START_SPEED) {
+      if (!this.isSupersonic) this.events.push('supersonic');
+      this.isSupersonic = true; this.supersonicTime = 0;
+    } else if (this.isSupersonic && speed >= K.SUPERSONIC_MAINTAIN_MIN_SPEED) {
+      this.supersonicTime += dt;
+      if (this.supersonicTime > K.SUPERSONIC_MAINTAIN_MAX_TIME) this.isSupersonic = false;
+    } else this.isSupersonic = false;
+
+    // visual wheel spin
+    for (const w of this.wheels) {
+      const v = w.contact ? this.vel.dot(fwd) : (w.spinVel || 0) * 0.98;
+      w.spinVel = v;
+      w.spin += (v / w.radius) * dt;
+    }
+    this.lastJump = ctl.jump;
+    this.worldContact = false;
+  }
+
+  _dodge(fwd) {
+    const ctl = this.controls;
+    // dodge direction: x forward, y right
+    let dx = -ctl.pitch, dy = ctl.yaw + ctl.roll;
+    if (Math.abs(dx) < 0.1 && Math.abs(dy) < 0.1) { dx = 0; dy = 0; }
+    else { const l = Math.hypot(dx, dy); dx /= l; dy /= l; }
+    // relative torque in body frame: (about forward, about left, about up)
+    this.flipRelTorque.set(dy, dx, 0);
+    this.dodgeDir.set(dx, dy, 0);
+    if (Math.abs(dx) < 0.1) dx = 0;
+    if (Math.abs(dy) < 0.1) dy = 0;
+    if (dx !== 0 || dy !== 0) {
+      // horizontal frame
+      const f2x = fwd.x, f2y = fwd.y;
+      const fl = Math.hypot(f2x, f2y) || 1;
+      const fx = f2x / fl, fy = f2y / fl;
+      const rx = fy, ry = -fx; // right of forward on the ground plane
+      const forwardSpeed = this.vel.x * fx + this.vel.y * fy;
+      const ratio = Math.abs(forwardSpeed) / K.CAR_MAX_SPEED;
+      let backwards;
+      if (Math.abs(forwardSpeed) < 100) backwards = dx < 0;
+      else backwards = (dx >= 0) !== (forwardSpeed >= 0);
+      let ix = dx * K.FLIP_INITIAL_VEL_SCALE, iy = dy * K.FLIP_INITIAL_VEL_SCALE;
+      const maxX = backwards ? K.FLIP_BACKWARD_IMPULSE_MAX_SPEED_SCALE : K.FLIP_FORWARD_IMPULSE_MAX_SPEED_SCALE;
+      ix *= (maxX - 1) * ratio + 1;
+      iy *= (K.FLIP_SIDE_IMPULSE_MAX_SPEED_SCALE - 1) * ratio + 1;
+      if (backwards) ix *= K.FLIP_BACKWARD_IMPULSE_SCALE_X;
+      this.vel.x += fx * ix + rx * iy;
+      this.vel.y += fy * ix + ry * iy;
+    }
+    this.hasFlipped = true;
+    this.isFlipping = true;
+    this.flipTime = 0;
+    this.events.push('flip');
+  }
+
+  _airTorque(dt, airControl, fwd, left, up) {
+    const ctl = this.controls;
+    if (this.isFlipping) this.isFlipping = this.hasFlipped && this.flipTime < K.FLIP_TORQUE_TIME;
+    let doAir = false;
+    if (this.isFlipping) {
+      const rt = this.flipRelTorque;
+      if (rt.x !== 0 || rt.y !== 0) {
+        // flip cancel: pitch input against the flip direction
+        let pitchScale = 1;
+        if (rt.y !== 0 && ctl.pitch !== 0 && sign(ctl.pitch) === sign(rt.y)) {
+          pitchScale = 1 - Math.min(Math.abs(ctl.pitch), 1);
+          doAir = true;
+        }
+        const roll = rt.x * K.FLIP_TORQUE_ROLL, pitchDown = rt.y * pitchScale * K.FLIP_TORQUE_PITCH;
+        // roll right = +about forward; nose down = +about left
+        this.angVel.addScaled(fwd, roll * dt).addScaled(left, pitchDown * dt);
+      } else doAir = true;
+    } else doAir = true;
+    doAir = doAir && !this.isAutoFlipping && airControl;
+    if (!doAir) return;
+
+    let pitchScale = 1;
+    if (this.isFlipping || (this.hasFlipped && this.flipTime < K.FLIP_TORQUE_TIME + K.FLIP_PITCHLOCK_EXTRA_TIME)) pitchScale = 0;
+    const p = clamp(ctl.pitch, -1, 1) * pitchScale, y = clamp(ctl.yaw, -1, 1), r = clamp(ctl.roll, -1, 1);
+    // axes: pitch about right (= -left), yaw about up (turn right = -up), roll about forward
+    const w = this.angVel;
+    const wPitch = -w.dot(left), wYaw = -w.dot(up), wRoll = w.dot(fwd);
+    const S = K.CAR_TORQUE_SCALE;
+    const aPitch = (p * K.AIR_TORQUE.pitch - wPitch * K.AIR_DAMPING.pitch * (1 - Math.abs(p))) * S;
+    const aYaw = (y * K.AIR_TORQUE.yaw - wYaw * K.AIR_DAMPING.yaw * (1 - Math.abs(y))) * S;
+    const aRoll = (r * K.AIR_TORQUE.roll - wRoll * K.AIR_DAMPING.roll) * S;
+    w.addScaled(left, -aPitch * dt).addScaled(up, -aYaw * dt).addScaled(fwd, aRoll * dt);
+  }
+
+  clampVelocities() {
+    this.vel.clampLength(K.CAR_MAX_SPEED);
+    this.angVel.clampLength(K.CAR_MAX_ANG_SPEED);
+  }
+
+  integrate(dt) {
+    if (this.isDemoed) return;
+    this.pos.addScaled(this.vel, dt);
+    this.quat.integrate(this.angVel, dt);
+    this.R.fromQuat(this.quat);
+  }
+}
