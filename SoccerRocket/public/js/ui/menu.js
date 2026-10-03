@@ -192,7 +192,8 @@ export class Menu {
   tab_camera(b) {
     // Rocket League's Settings > Camera: its presets, slider ranges and steps
     const c = this.s.camera, sv = () => this.save();
-    const presets = [...Object.entries(CAMERA_PRESETS).map(([k, p]) => [k, p.label]), ['custom', 'Custom']];
+    b.style.flexShrink = '0'; // taller than short screens: let the panel scroll instead of overlapping BACK
+    const presets =[...Object.entries(CAMERA_PRESETS).map(([k, p]) => [k, p.label]), ['custom', 'Custom']];
     const label = () => presets.find((p) => p[0] === cameraPresetOf(c))[1];
     const rows = {};
     const presetRow = this.cycle('Preset', presets, cameraPresetOf(c), (v) => {
