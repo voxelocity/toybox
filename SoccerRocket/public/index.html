@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#05070d">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Soccer Rocket</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="css/style.css">
+<script type="importmap">
+{ "imports": { "three": "./vendor/three/three.module.js", "three/addons/": "./vendor/three/addons/" } }
+</script>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div id="loading" class="screen">
+  <div class="brand"><span class="b1">SOCCER</span><span class="b2">ROCKET</span></div>
+  <div class="bar"><div id="loadfill"></div></div>
+  <div id="loadtext">Loading…</div>
+</div>
+
+<div id="hud" class="hidden">
+  <div id="scorebug">
+    <div class="team blue"><span class="tname">BLUE</span><span id="score0" class="score">0</span></div>
+    <div id="clock"><span id="time">5:00</span><span id="ot" class="hidden">OVERTIME</span></div>
+    <div class="team orange"><span id="score1" class="score">0</span><span class="tname">ORANGE</span></div>
+  </div>
+  <div id="feed"></div>
+  <div id="center-msg"></div>
+  <div id="sub-msg"></div>
+  <div id="boostmeter">
+    <svg viewBox="0 0 120 120">
+      <circle class="track" cx="60" cy="60" r="50"></circle>
+      <circle id="boostarc" class="arc" cx="60" cy="60" r="50"></circle>
+    </svg>
+    <div id="boostnum">33</div>
+  </div>
+  <div id="camtag">CAR CAM</div>
+  <div id="fps" class="hidden"></div>
+  <div id="freeplay-help" class="hidden">
+    <b>FREE PLAY</b> · R reset ball · T launch ball at you · U unlimited boost · Esc menu
+  </div>
+  <div id="spectate" class="hidden"></div>
+  <div id="replay-tag" class="hidden"><span class="rec"></span>REPLAY <small>press jump to skip</small></div>
+</div>
+
+<div id="scoreboard" class="hidden"></div>
+<div id="touch" class="hidden"></div>
+<div id="menu-root"></div>
+<div id="toast"></div>
+<div id="rotate-hint" class="hidden"><div>↻</div>Rotate your device to landscape</div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

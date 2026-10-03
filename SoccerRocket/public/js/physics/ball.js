@@ -1,6 +1,6 @@
 // Ball rigid body: a solid sphere with drag, Coulomb friction against the
 // arena (which yields the characteristic spin-on-bounce) and restitution.
-import { V3 } from './math.js';
+import { V3, Quat } from './math.js';
 import * as K from './constants.js';
 
 const _r = new V3(), _v = new V3(), _t = new V3(), _a = new V3();
@@ -14,6 +14,7 @@ export class Ball {
     this.pos = new V3(0, 0, K.BALL_REST_Z);
     this.vel = new V3();
     this.angVel = new V3();
+    this.quat = new Quat();
     this.lastImpact = 0;
     this.lastNormal = new V3(0, 0, 1);
     this.frozen = false;
@@ -52,6 +53,7 @@ export class Ball {
     this.vel.clampLength(K.BALL_MAX_SPEED);
     this.angVel.clampLength(K.BALL_MAX_ANG_SPEED);
     this.pos.addScaled(this.vel, dt);
+    this.quat.integrate(this.angVel, dt);
   }
 
   /**
