@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { buildCarModel, GROUND_Z, PAINTS } from './car-model.js';
 import { instantiateCar } from './custom-assets.js';
 import { Ribbon } from './particles.js';
+import { compactDrawGroups } from './compact.js';
 import { S } from './convert.js';
 import { TEAM_RGB } from './effects.js';
 
@@ -11,7 +12,11 @@ const FLAME_COLORS = [
   { core: new THREE.Color(4.0, 3.4, 2.0), mid: new THREE.Color(3.4, 1.2, 0.25), edge: new THREE.Color(1.6, 0.3, 0.05) },
 ];
 
+// one shared geometry per flame size: cars come and go with every match
+const _flameGeo = new Map();
 function flameGeometry(len, radius) {
+  const key = len + ':' + radius;
+  if (_flameGeo.has(key)) return _flameGeo.get(key);
   const pts = [];
   const n = 24;
   for (let i = 0; i <= n; i++) {
@@ -21,6 +26,7 @@ function flameGeometry(len, radius) {
   }
   const g = new THREE.LatheGeometry(pts, 20);
   g.rotateZ(-Math.PI / 2); // lathe axis (-y) -> -x (backwards)
+  _flameGeo.set(key, g);
   return g;
 }
 
@@ -72,7 +78,7 @@ function nameSprite(text, team) {
   return s;
 }
 
-const _v = new THREE.Vector3(), _q = new THREE.Quaternion(), _w = new THREE.Vector3();
+const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _p = new THREE.Vector3(), _s = new THREE.Vector3();
 
 // Wireframe of the physics hitbox and wheels (car-local), like the in-game
 // hitbox visualisers: box at the hitbox offset, circles at the wheel
@@ -108,6 +114,7 @@ export class CarView {
     this.q = opts.quality;
     let model;
     if (opts.custom) {
+      compactDrawGroups(opts.custom.container); // shared geometry: done once
       const pc = PAINTS[opts.paint || 0] || PAINTS[0];
       const inst = instantiateCar(opts.custom, new THREE.Color(car.team === 0 ? pc.blue : pc.orange));
       model = { group: inst.group, wheels: inst.wheels, nozzles: inst.nozzles, custom: true };
@@ -141,12 +148,11 @@ export class CarView {
         this.ribbons.push(r);
       }
     }
-    this.light = null;
-    if (opts.isLocal && this.q.shadowSize > 0) {
-      this.light = new THREE.PointLight(car.team === 0 ? 0x4a8cff : 0xff7a22, 0, 9, 2);
-      this.light.position.set(-80 * S, 10 * S, 0);
-      this.group.add(this.light);
-    }
+    // the local car's boost glow uses the effects' permanent light (adding a
+    // light here would change every lit shader when a match starts)
+    this.lightColor = car.team === 0 ? 0x4a8cff : 0xff7a22;
+    this.hasLight = !!opts.isLocal;
+    this.lightPos = new THREE.Vector3(-80 * S, 10 * S, 0);
     if (opts.name && opts.showName) {
       this.tag = nameSprite(opts.name, car.team);
       this.tag.position.set(0, 85 * S, 0);
@@ -162,7 +168,10 @@ export class CarView {
 
   showHitbox(v) { this.hitbox.visible = v; }
 
-  setVisible(v) { this.group.visible = v; this.visible = v; if (!v) for (const r of this.ribbons) r.clear(); }
+  setVisible(v) {
+    this.group.visible = v; this.visible = v;
+    if (!v) { for (const r of this.ribbons) r.clear(); if (this.hasLight && this.effects) this.effects.setBoostLight(0, 0, 0, this.lightColor, 0); }
+  }
 
   /**
    * s: interpolated render state { pos (physics V3-like), quat (physics), boosting,
@@ -198,7 +207,6 @@ export class CarView {
       f.outer.material.uniforms.uTime.value = time; f.inner.material.uniforms.uTime.value = time;
       f.outer.material.uniforms.uAmp.value = this.flameAmp; f.inner.material.uniforms.uAmp.value = this.flameAmp;
     }
-    if (this.light) this.light.intensity = this.flameAmp * (4 + Math.random() * 1.5);
 
     // particles from the nozzles while boosting
     const E = this.effects;
@@ -208,20 +216,19 @@ export class CarView {
       this.emitAcc += dt * 140 * E.budget;
       this.smokeAcc += dt * 34 * E.budget;
       const c = FLAME_COLORS[this.team];
+      const A = E.add, B = E.alpha, N = this.model.nozzles;
       while (this.emitAcc >= 1) {
         this.emitAcc -= 1;
-        const n = this.model.nozzles[Math.random() < 0.5 ? 0 : 1];
-        const p = n.clone().applyMatrix4(g.matrixWorld);
+        const p = _p.copy(N[Math.random() < 0.5 ? 0 : N.length - 1]).applyMatrix4(g.matrixWorld);
         const sp = 6 + Math.random() * 5;
-        E.add.emit({ x: p.x, y: p.y, z: p.z, vx: vel.x * 0.55 + back.x * sp + (Math.random() - 0.5), vy: vel.y * 0.55 + back.y * sp + (Math.random() - 0.5), vz: vel.z * 0.55 + back.z * sp + (Math.random() - 0.5),
-          life: 0.1 + Math.random() * 0.16, size0: 0.1, size1: 0.32, c0: [c.mid.r * 0.5, c.mid.g * 0.5, c.mid.b * 0.5, 1], c1: [c.edge.r * 0.4, c.edge.g * 0.4, c.edge.b * 0.4, 0], drag: 4, type: 4, spin: 3 });
+        A.color(A.spawn(p.x, p.y, p.z, vel.x * 0.55 + back.x * sp + (Math.random() - 0.5), vel.y * 0.55 + back.y * sp + (Math.random() - 0.5), vel.z * 0.55 + back.z * sp + (Math.random() - 0.5),
+          0.1 + Math.random() * 0.16, 0.1, 0.32, 4, 0, 4, 3), c.mid.r * 0.5, c.mid.g * 0.5, c.mid.b * 0.5, 1, c.edge.r * 0.4, c.edge.g * 0.4, c.edge.b * 0.4, 0);
       }
       while (this.smokeAcc >= 1) {
         this.smokeAcc -= 1;
-        const n = this.model.nozzles[Math.random() < 0.5 ? 0 : 1];
-        const p = n.clone().applyMatrix4(g.matrixWorld).addScaledVector(back, 0.35);
-        E.alpha.emit({ x: p.x, y: p.y, z: p.z, vx: vel.x * 0.25 + back.x * 2, vy: vel.y * 0.25 + 0.3, vz: vel.z * 0.25 + back.z * 2,
-          life: 0.5 + Math.random() * 0.5, size0: 0.14, size1: 0.75, c0: [0.5, 0.5, 0.52, 0.22], c1: [0.62, 0.62, 0.64, 0], drag: 2.2, type: 1, spin: (Math.random() - 0.5) * 2 });
+        const p = _p.copy(N[Math.random() < 0.5 ? 0 : N.length - 1]).applyMatrix4(g.matrixWorld).addScaledVector(back, 0.35);
+        B.color(B.spawn(p.x, p.y, p.z, vel.x * 0.25 + back.x * 2, vel.y * 0.25 + 0.3, vel.z * 0.25 + back.z * 2,
+          0.5 + Math.random() * 0.5, 0.14, 0.75, 2.2, 0, 1, (Math.random() - 0.5) * 2), 0.5, 0.5, 0.52, 0.22, 0.62, 0.62, 0.64, 0);
       }
     } else { this.emitAcc = 0; this.smokeAcc = 0; }
 
@@ -230,8 +237,8 @@ export class CarView {
       this.sprayAcc += dt * 60 * Math.min(1, s.speed / 1200);
       if (this.sprayAcc >= 1) {
         const n = Math.floor(this.sprayAcc); this.sprayAcc -= n;
-        for (const wi of (W ? [2, 3] : [])) {
-          const wp = W[wi].pivot.getWorldPosition(new THREE.Vector3());
+        if (W) for (let wi = 2; wi < 4; wi++) {
+          const wp = W[wi].pivot.getWorldPosition(_p);
           wp.y = 0.05;
           const side = _v.set(0, 0, wi === 2 ? -1 : 1).applyQuaternion(g.quaternion);
           E.grassSpray(wp, side, n);
@@ -242,18 +249,29 @@ export class CarView {
     // supersonic ribbons
     g.updateMatrixWorld();
     for (const r of this.ribbons) {
-      const p = r.localPos.clone().applyMatrix4(g.matrixWorld);
-      r.push(p, s.supersonic, time);
+      r.push(_p.copy(r.localPos).applyMatrix4(g.matrixWorld), s.supersonic, time);
       r.update(time, camPos);
     }
-    if (s.supersonic && !this.wasSupersonic && E) E.sonicBoom(g.position.clone(), TEAM_RGB[this.team]);
+    if (this.hasLight && E) {
+      const lp = _s.copy(this.lightPos).applyMatrix4(g.matrixWorld);
+      E.setBoostLight(lp.x, lp.y, lp.z, this.lightColor, this.flameAmp * (4 + Math.random() * 1.5));
+    }
+    if (s.supersonic && !this.wasSupersonic && E) E.sonicBoom(g.position, TEAM_RGB[this.team]);
     this.wasSupersonic = s.supersonic;
     if (this.tag) this.tag.visible = camPos.distanceTo(g.position) > 6;
   }
 
+  /**
+   * Removes the car. Per-car GPU buffers and textures are freed, but no
+   * material is disposed: that would release shader programs the next
+   * match's cars need and force them to recompile.
+   */
   dispose() {
     this.scene.remove(this.group);
-    for (const r of this.ribbons) this.scene.remove(r.mesh);
+    for (const r of this.ribbons) { this.scene.remove(r.mesh); r.geometry.dispose(); }
+    this.hitbox.traverse((o) => { if (o.geometry) o.geometry.dispose(); });
+    if (this.tag) this.tag.material.map.dispose();
+    if (this.hasLight && this.effects) this.effects.setBoostLight(0, 0, 0, this.lightColor, 0);
   }
 }
 

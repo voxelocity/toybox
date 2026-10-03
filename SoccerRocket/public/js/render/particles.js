@@ -83,7 +83,8 @@ export class ParticleSystem {
     this.aCol = new THREE.InstancedBufferAttribute(new Float32Array(max * 4), 4);
     this.aMisc = new THREE.InstancedBufferAttribute(new Float32Array(max * 4), 4); // rot, type, vel dir (2d stretch via vel)
     this.aVel = new THREE.InstancedBufferAttribute(new Float32Array(max * 3), 3);
-    for (const a of [this.aPos, this.aCol, this.aMisc, this.aVel]) a.setUsage(THREE.DynamicDrawUsage);
+    this.attrs = [this.aPos, this.aCol, this.aMisc, this.aVel];
+    for (const a of this.attrs) a.setUsage(THREE.DynamicDrawUsage);
     g.setAttribute('aPos', this.aPos); g.setAttribute('aCol', this.aCol); g.setAttribute('aMisc', this.aMisc); g.setAttribute('aVel', this.aVel);
     g.instanceCount = 0;
     this.geometry = g;
@@ -100,7 +101,13 @@ export class ParticleSystem {
           vCol = aCol; vType = aMisc.y;
           vec4 mv = modelViewMatrix * vec4(aPos.xyz, 1.0);
           vec2 corner = position.xy;
-          float size = aPos.w;
+          // Overdraw guard: a sprite never covers more than ~30% of the screen
+          // height and fades out right in front of the camera, so a demo or goal
+          // explosion next to the camera can't stack dozens of full-screen
+          // blended layers (a GPU frame-time spike).
+          float depth = max(-mv.z, 1e-3);
+          float size = min(aPos.w, 0.6 * depth / projectionMatrix[1][1]);
+          vCol.a *= smoothstep(0.25, 1.5, depth);
           if (aMisc.y > 1.5 && aMisc.y < 2.5) {
             // spark: stretch along screen-space velocity
             vec3 vv = mat3(modelViewMatrix) * aVel;
@@ -139,22 +146,27 @@ export class ParticleSystem {
   }
 
   /**
-   * o: { x,y,z (three metres), vx,vy,vz, life, size0, size1, c0:[r,g,b,a], c1:[r,g,b,a],
-   *      drag, gravity, rot, spin, type }
+   * Allocation-free emit (three metres, seconds); returns the slot so the
+   * caller can set its colours with color(). When the pool is full a random
+   * live particle is replaced.
    */
-  emit(o) {
-    let i;
-    if (this.n < this.max) i = this.n++;
-    else { i = Math.floor(Math.random() * this.max); }
-    this.pos[i * 3] = o.x; this.pos[i * 3 + 1] = o.y; this.pos[i * 3 + 2] = o.z;
-    this.vel[i * 3] = o.vx || 0; this.vel[i * 3 + 1] = o.vy || 0; this.vel[i * 3 + 2] = o.vz || 0;
-    this.life[i] = 0; this.maxLife[i] = o.life || 1;
-    this.size[i * 2] = o.size0 ?? 0.2; this.size[i * 2 + 1] = o.size1 ?? this.size[i * 2];
-    const c0 = o.c0 || [1, 1, 1, 1], c1 = o.c1 || c0;
-    this.col0.set(c0, i * 4); this.col1.set(c1, i * 4);
-    this.drag[i] = o.drag || 0; this.grav[i] = o.gravity || 0;
-    this.rot[i * 2] = o.rot ?? Math.random() * 6.283; this.rot[i * 2 + 1] = o.spin || 0;
-    this.type[i] = o.type || 0;
+  spawn(x, y, z, vx, vy, vz, life, size0, size1, drag, gravity, type, spin = 0) {
+    const i = this.n < this.max ? this.n++ : Math.floor(Math.random() * this.max);
+    this.pos[i * 3] = x; this.pos[i * 3 + 1] = y; this.pos[i * 3 + 2] = z;
+    this.vel[i * 3] = vx; this.vel[i * 3 + 1] = vy; this.vel[i * 3 + 2] = vz;
+    this.life[i] = 0; this.maxLife[i] = life;
+    this.size[i * 2] = size0; this.size[i * 2 + 1] = size1;
+    this.drag[i] = drag; this.grav[i] = gravity;
+    this.rot[i * 2] = Math.random() * 6.283; this.rot[i * 2 + 1] = spin;
+    this.type[i] = type;
+    return i;
+  }
+
+  /** Start (rgba 0) and end (rgba 1) colours of slot i. */
+  color(i, r0, g0, b0, a0, r1, g1, b1, a1) {
+    const c0 = this.col0, c1 = this.col1, k = i * 4;
+    c0[k] = r0; c0[k + 1] = g0; c0[k + 2] = b0; c0[k + 3] = a0;
+    c1[k] = r1; c1[k + 1] = g1; c1[k + 2] = b1; c1[k + 3] = a1;
   }
 
   update(dt) {
@@ -191,7 +203,8 @@ export class ParticleSystem {
     }
     this.geometry.instanceCount = n;
     if (n > 0) {
-      for (const a of [this.aPos, this.aCol, this.aMisc, this.aVel]) {
+      for (let k = 0; k < 4; k++) {
+        const a = this.attrs[k];
         a.clearUpdateRanges();
         a.addUpdateRange(0, n * a.itemSize);
         a.needsUpdate = true;
@@ -216,7 +229,10 @@ export class ParticleSystem {
 export class Ribbon {
   constructor(scene, length = 40, additive = true) {
     this.len = length;
-    this.pts = [];
+    // ring buffer of trail points, newest first: x, y, z, time, emitting
+    this.buf = new Float64Array(length * 5);
+    this.head = 0;
+    this.count = 0;
     const g = new THREE.BufferGeometry();
     this.posArr = new Float32Array(length * 2 * 3);
     this.colArr = new Float32Array(length * 2 * 4);
@@ -237,32 +253,42 @@ export class Ribbon {
     this.color = [1, 1, 1];
     this.width = 0.1;
     this.maxAge = 0.5;
+    this.drawn = false;
   }
 
   push(p, emitting, time) {
-    this.pts.unshift({ x: p.x, y: p.y, z: p.z, t: time, on: emitting });
-    if (this.pts.length > this.len) this.pts.pop();
+    this.head = (this.head + this.len - 1) % this.len;
+    const o = this.head * 5, B = this.buf;
+    B[o] = p.x; B[o + 1] = p.y; B[o + 2] = p.z; B[o + 3] = time; B[o + 4] = emitting ? 1 : 0;
+    if (this.count < this.len) this.count++;
   }
 
+  /** Buffer offset of the i-th newest point (clamped to the oldest). */
+  _at(i) { return ((this.head + Math.min(i, this.count - 1)) % this.len) * 5; }
+
   update(time, camPos) {
-    const n = this.pts.length;
+    const n = this.count, B = this.buf;
     const P = this.posArr, C = this.colArr;
+    if (n === 0) {
+      if (this.drawn) { P.fill(0); C.fill(0); this._upload(); this.drawn = false; }
+      this.mesh.visible = false;
+      return;
+    }
     let drawn = 0;
     for (let i = 0; i < this.len; i++) {
-      const p = this.pts[Math.min(i, n - 1)];
-      if (!p) { P.fill(0); C.fill(0); break; }
-      const q = this.pts[Math.min(i + 1, n - 1)] || p, r = this.pts[Math.min(Math.max(i - 1, 0), n - 1)];
-      let dx = r.x - q.x, dy = r.y - q.y, dz = r.z - q.z;
+      const p = this._at(i), q = this._at(i + 1), r = this._at(Math.max(i - 1, 0));
+      const px = B[p], py = B[p + 1], pz = B[p + 2];
+      const dx = B[r] - B[q], dy = B[r + 1] - B[q + 1], dz = B[r + 2] - B[q + 2];
       // side vector: perpendicular to segment and view
-      const vx = camPos.x - p.x, vy = camPos.y - p.y, vz = camPos.z - p.z;
+      const vx = camPos.x - px, vy = camPos.y - py, vz = camPos.z - pz;
       let sx = dy * vz - dz * vy, sy = dz * vx - dx * vz, sz = dx * vy - dy * vx;
       const sl = Math.hypot(sx, sy, sz) || 1;
-      const age = (time - p.t) / this.maxAge;
-      const fade = Math.max(0, 1 - age) * (p.on ? 1 : 0) * (i < n ? 1 : 0);
+      const age = (time - B[p + 3]) / this.maxAge;
+      const fade = Math.max(0, 1 - age) * B[p + 4] * (i < n ? 1 : 0);
       const w = this.width * (0.35 + 0.65 * Math.max(0, 1 - age));
       sx = sx / sl * w; sy = sy / sl * w; sz = sz / sl * w;
-      P[i * 6] = p.x + sx; P[i * 6 + 1] = p.y + sy; P[i * 6 + 2] = p.z + sz;
-      P[i * 6 + 3] = p.x - sx; P[i * 6 + 4] = p.y - sy; P[i * 6 + 5] = p.z - sz;
+      P[i * 6] = px + sx; P[i * 6 + 1] = py + sy; P[i * 6 + 2] = pz + sz;
+      P[i * 6 + 3] = px - sx; P[i * 6 + 4] = py - sy; P[i * 6 + 5] = pz - sz;
       for (let k = 0; k < 2; k++) {
         C[i * 8 + k * 4] = this.color[0]; C[i * 8 + k * 4 + 1] = this.color[1]; C[i * 8 + k * 4 + 2] = this.color[2];
         C[i * 8 + k * 4 + 3] = fade;
@@ -270,9 +296,15 @@ export class Ribbon {
       if (fade > 0) drawn++;
     }
     this.mesh.visible = drawn > 1;
+    // nothing to show and nothing shown last frame: skip the upload
+    if (this.mesh.visible || this.drawn) this._upload();
+    this.drawn = this.mesh.visible;
+  }
+
+  _upload() {
     this.geometry.attributes.position.needsUpdate = true;
     this.geometry.attributes.color.needsUpdate = true;
   }
 
-  clear() { this.pts.length = 0; this.mesh.visible = false; }
+  clear() { this.count = 0; this.mesh.visible = false; }
 }

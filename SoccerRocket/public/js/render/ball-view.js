@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { BALL_RADIUS } from '../physics/constants.js';
 import { S } from './convert.js';
+import { compactDrawGroups } from './compact.js';
 
 function panelCentres() {
   const phi = (1 + Math.sqrt(5)) / 2;
@@ -24,6 +25,7 @@ export class BallView {
     if (custom) {
       // the player's own ball model
       this.uniforms = { uSeam: { value: new THREE.Color() }, uGlow: { value: 0 } };
+      compactDrawGroups(custom.container);
       this.mesh = custom.container.clone(true);
       this.mesh.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
       scene.add(this.mesh);

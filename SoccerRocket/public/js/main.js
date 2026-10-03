@@ -20,7 +20,16 @@ import { TEAM_RGB } from './render/effects.js';
 
 const ORDER = ['low', 'medium', 'high', 'ultra'];
 const $ = (id) => document.getElementById(id);
-const toThree = (p) => new THREE.Vector3(p.x * 0.01, p.z * 0.01, -p.y * 0.01);
+// Event positions in render space. A small ring of scratch vectors keeps the
+// event handlers allocation-free; every consumer copies what it keeps.
+const _tv = Array.from({ length: 8 }, () => new THREE.Vector3());
+let _ti = 0;
+const toThree = (p) => _tv[_ti = (_ti + 1) & 7].set(p.x * 0.01, p.z * 0.01, -p.y * 0.01);
+/** A direction (unit normal) in render space; same scratch ring. */
+const dirToThree = (n) => _tv[_ti = (_ti + 1) & 7].set(n.x, n.z, -n.y);
+// At most this much game time is simulated per frame (6 ticks: 20 fps keeps
+// real-time speed); more would make every frame after a hitch slower still.
+const MAX_CATCHUP_TICKS = Math.round(0.05 / DT);
 
 class App {
   async boot() {
@@ -70,12 +79,14 @@ class App {
     this.checkOrientation();
 
     this.toMainMenu();
+    this.menu.visible = false; // the menu takes input only once the loader is gone
     // Compile every shader while the loading screen is up. On Windows (ANGLE /
     // Direct3D) this can take a while and would otherwise freeze the first frame.
     this.progress(0.75, 'Compiling shaders…');
     await painted();
-    await this.renderer.warmUp((f) => this.progress(0.75 + f * 0.25, 'Compiling shaders…'));
+    await this.renderer.warmUp((f) => this.progress(0.75 + f * 0.25, 'Compiling shaders…'), () => this.view.prime());
     this.progress(1, 'Ready');
+    this.menu.visible = true;
     $('loading').classList.add('fade');
     setTimeout(() => $('loading').remove(), 700);
     window.__ready = true;
@@ -103,17 +114,32 @@ class App {
   }
   qualityLabel() { return (this.settings.quality === 'auto' ? 'Auto · ' : '') + (QUALITY_PRESETS[this.qName] || {}).label; }
 
-  async applyQuality() {
+  /** Rebuilds the view for the current quality setting (calls run one at a time). */
+  applyQuality() {
+    this._qualityJob = (this._qualityJob || Promise.resolve()).then(() => this._rebuildView()).catch((e) => console.warn('[quality]', e));
+    return this._qualityJob;
+  }
+
+  async _rebuildView() {
     const name = this.resolveQualityName();
     if (name === this.qName && this.view) return;
     this.qName = name;
     const q = this.qualityPreset();
-    this.view.dispose();
-    this.renderer.applyQuality(q);
-    await this.renderer.loadSky('assets/hdri/').catch(() => this.renderer.loadSky('', null));
-    this.custom = await loadCustomAssets(q).catch(() => ({}));
-    this.view = new SceneView(this.renderer, q, this.custom);
-    if (this.match) this.view.setPlayers(this.decoratedPlayers(), this.settings);
+    // Hold the frame loop while the new view is built and its shaders compile,
+    // instead of letting the first frame compile them all synchronously.
+    this.frozen = true;
+    try {
+      this.view.dispose();
+      this.renderer.applyQuality(q);
+      await this.renderer.loadSky('assets/hdri/').catch(() => this.renderer.loadSky('', null));
+      this.custom = await loadCustomAssets(q).catch(() => ({}));
+      this.view = new SceneView(this.renderer, q, this.custom);
+      if (this.match) this.view.setPlayers(this.decoratedPlayers(), this.settings);
+      await this.renderer.warmUp(null, () => this.view.prime());
+    } finally {
+      this.frozen = false;
+      this.last = performance.now();
+    }
     this.toast(`Graphics: ${QUALITY_PRESETS[name].label}`);
   }
   applyRenderScale() { this.renderer.q = this.qualityPreset(); this.renderer.resize(); }
@@ -260,16 +286,19 @@ class App {
       }
       this.acc += dt;
       let steps = 0;
-      while (this.acc >= DT && steps < 12) {
+      while (this.acc >= DT && steps < MAX_CATCHUP_TICKS) {
         const tmp = this.prevCars; this.prevCars = this.curCars; this.curCars = tmp;
         const tb = this.prevBall; this.prevBall = this.curBall; this.curBall = tb;
         m.tick(DT);
-        m.world.cars.forEach((c, i) => captureCar(c, this.curCars[i]));
+        const cars = m.world.cars;
+        for (let i = 0; i < cars.length; i++) captureCar(cars[i], this.curCars[i]);
         captureBall(m.world.ball, this.curBall);
         this.acc -= DT;
         steps++;
       }
-      if (steps >= 12) this.acc = 0;
+      // After a hitch, drop the game time we could not catch up on (the game
+      // briefly runs slow) instead of running ever more ticks per frame.
+      if (this.acc >= DT) this.acc %= DT;
     }
     this.handleEvents();
 
@@ -356,7 +385,11 @@ class App {
     const m = this.match, view = this.view, fx = view.effects, hud = this.hud;
     const evs = m.events;
     if (!evs.length) return;
-    m.events = [];
+    // two event arrays take turns (events emitted while handling go to the other)
+    const next = this._evSpare || [];
+    next.length = 0;
+    m.events = next;
+    this._evSpare = evs;
     const humanCar = m.human ? m.human.car : null;
     const isHumanMatch = this.mode === 'match';
     for (const e of evs) {
@@ -365,7 +398,7 @@ class App {
         case 'go': if (isHumanMatch) hud.message('GO!', { cls: 'go', time: 0.8 }); this.audio.event(e); break;
         case 'kickoff': fx.clear(); view.ball.setTouchTeam(-1); for (const c of view.cars) for (const r of c.ribbons) r.clear(); this.audio.event(e); break;
         case 'ballHit': {
-          const p = toThree(e.point), n = new THREE.Vector3(e.normal.x, e.normal.z, -e.normal.y);
+          const p = toThree(e.point), n = dirToThree(e.normal);
           fx.ballHit(p, n, e.dv, e.car.team);
           view.ball.setTouchTeam(e.car.team);
           this.audio.event(e, p);
@@ -374,7 +407,7 @@ class App {
           break;
         }
         case 'ballBounce': {
-          const p = toThree(e.point), n = new THREE.Vector3(e.normal.x, e.normal.z, -e.normal.y);
+          const p = toThree(e.point), n = dirToThree(e.normal);
           fx.ballBounce(p, n, e.speed);
           this.audio.event(e, p);
           break;
@@ -395,7 +428,7 @@ class App {
           break;
         }
         case 'pad': {
-          const p = new THREE.Vector3(e.pad.x * 0.01, 0.05, -e.pad.y * 0.01);
+          const p = _tv[_ti = (_ti + 1) & 7].set(e.pad.x * 0.01, 0.05, -e.pad.y * 0.01);
           fx.padPickup(p, e.pad.big);
           this.audio.event(e, p, e.car === humanCar);
           break;
@@ -501,7 +534,7 @@ class App {
     for (const e of a.events || []) {
       if (e._played === rs) continue;
       e._played = rs;
-      if (e.type === 'ballHit') { this.view.effects.ballHit(toThree(e.point), new THREE.Vector3(e.normal.x, e.normal.z, -e.normal.y), e.dv, e.car.team); this.view.ball.setTouchTeam(e.car.team); this.audio.event(e, toThree(e.point)); }
+      if (e.type === 'ballHit') { this.view.effects.ballHit(toThree(e.point), dirToThree(e.normal), e.dv, e.car.team); this.view.ball.setTouchTeam(e.car.team); this.audio.event(e, toThree(e.point)); }
       if (e.type === 'ballBounce') this.audio.event(e, toThree(e.point));
     }
     if (!rs.exploded && rs.t >= rs.goalTime) {
