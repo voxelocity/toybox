@@ -167,6 +167,7 @@ for (const target of [500, 1000, 1500, 2200]) {
   const w = new World();
   w.goalsEnabled = false;
   w.ball.reset(0, 0, 1000);
+  w.ball.vel.z = -1; // a ball with exactly zero velocity sleeps (RocketSim), like on the kickoff spot
   let maxZ2 = 0, bounced = false;
   run(w, 3.5, () => {
     if (w.ball.vel.z > 0) bounced = true;
@@ -195,7 +196,8 @@ for (const target of [500, 1000, 1500, 2200]) {
   car.controls.throttle = 1; car.controls.boost = true;
   let hitSpeed = 0;
   run(w, 3, () => { for (const e of w.events) if (e.type === 'ballHit' && !hitSpeed) hitSpeed = 1; });
-  check('ball speed after supersonic hit', w.ball.vel.len(), 2800, 4200, ' uu/s');
+  // RocketSim, same setup (tools/rocketsim oracle, 3 s from rest): 2796 uu/s
+  check('ball speed after supersonic hit', w.ball.vel.len(), 2750, 2850, ' uu/s');
 }
 
 // 12. Drive up the wall: car turns into wall at speed and sticks
@@ -305,7 +307,10 @@ for (const target of [500, 1000, 1500, 2200]) {
       worst = Math.max(worst, outX, outY, outZ);
     });
   }
-  check('ball never escapes (max overshoot past walls)', worst, -1e9, -60, ' uu');
+  // Bullet (RocketSim) has no continuous collision: a 6000 uu/s ball can sink up
+  // to one tick of travel (50 uu) into a wall before it is pushed out, exactly
+  // as in RocketSim (oracle: 44.9 uu). The centre must stay inside.
+  check('ball never escapes (max overshoot past walls)', worst, -1e9, -(K.BALL_RADIUS - K.BALL_MAX_SPEED * K.DT), ' uu');
   check('ball no NaN', nan ? 1 : 0, 0, 0);
 }
 
@@ -329,7 +334,10 @@ for (const target of [500, 1000, 1500, 2200]) {
       worst = Math.max(worst, Math.abs(p.x) - 4096, outY, -p.z, p.z - 2044);
     }
   });
-  check('cars never escape (origin vs surfaces; hitbox bottom is 2.7 above origin)', worst, -1e9, 3, ' uu');
+  // Discrete collision like RocketSim: a car can sink up to one tick of travel
+  // (2300 / 120 = 19 uu) before the solver pushes it out; the hitbox bottom
+  // is 1.5 uu above the origin. Anything beyond that would be a real escape.
+  check('cars never escape (origin vs surfaces)', worst, -1e9, K.CAR_MAX_SPEED * K.DT, ' uu');
   check('cars no NaN', nan ? 1 : 0, 0, 0);
 }
 
