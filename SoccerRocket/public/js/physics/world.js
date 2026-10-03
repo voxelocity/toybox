@@ -207,7 +207,7 @@ export class World {
         const b = cars[j];
         if (!b.inWorld) continue;
         const before = np.nManifolds;
-        np.carCar(a, b);
+        np.carCar(b, a); // RocketSim's manifold has the later-added car as body A
         if (np.nManifolds > before) {
           const m = np.manifolds[before];
           let vmax = 0, pi = 0;
@@ -237,10 +237,10 @@ export class World {
     for (let i = 0; i < nc; i++) {
       const car = cars[i];
       if (this.carsFrozen) break;
-      if (car.isDemoed) {
-        if (car.inWorld) { car.vel.set(0, 0, 0); car.angVel.set(0, 0, 0); } // demolished this tick
-        continue;
-      }
+      // Demolished (this tick or earlier): RocketSim skips PostTick and
+      // FinishPhysicsTick and freezes the body, velocity included, from the
+      // next tick on.
+      if (car.isDemoed) continue;
       car.postTick(this, dt);
       car.finishPhysicsTick();
       for (const e of car.events) ev.push({ type: e, car });

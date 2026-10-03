@@ -207,10 +207,10 @@ export class Narrowphase {
     const mesh = this.mesh, thr = car.contactThreshold;
     boxFrame(car, _bx);
     const h = car.half, mg = car.margin, R = car.R.e;
-    // btBoxShape::getAabb: |R| * (half - margin) + margin
-    const ex = Math.abs(R[0]) * _bx.ex + Math.abs(R[1]) * _bx.ey + Math.abs(R[2]) * _bx.ez + mg;
-    const ey = Math.abs(R[3]) * _bx.ex + Math.abs(R[4]) * _bx.ey + Math.abs(R[5]) * _bx.ez + mg;
-    const ez = Math.abs(R[6]) * _bx.ex + Math.abs(R[7]) * _bx.ey + Math.abs(R[8]) * _bx.ez + mg;
+    // btBoxShape::getAabb (btTransformAabb): |R| * (core + margin)
+    const ex = Math.abs(R[0]) * h.x + Math.abs(R[1]) * h.y + Math.abs(R[2]) * h.z;
+    const ey = Math.abs(R[3]) * h.x + Math.abs(R[4]) * h.y + Math.abs(R[5]) * h.z;
+    const ez = Math.abs(R[6]) * h.x + Math.abs(R[7]) * h.y + Math.abs(R[8]) * h.z;
     const x0 = _bx.cx - ex, y0 = _bx.cy - ey, z0 = _bx.cz - ez, x1 = _bx.cx + ex, y1 = _bx.cy + ey, z1 = _bx.cz + ez;
     const m = this._manifold(car, null, KIND_CAR_WORLD, thr);
     const n = mesh.overlapping(x0, y0, z0, x1, y1, z1);
@@ -705,21 +705,20 @@ function setNormal(pt, nx, ny, nz) {
 // ---------------------------------------------------------------------------
 // Rays vs ball / car boxes
 // ---------------------------------------------------------------------------
+// Bullet casts rays against convex shapes with btSubsimplexConvexCast, which
+// reports nothing for a ray that starts inside the shape (no separating
+// direction, zero normal), so a wheel inside another car or the ball sees
+// through it.
 const _rh = { t: 0, nx: 0, ny: 0, nz: 0, tri: -1 };
 const _rn = new Float64Array(3);
 function raySphere(fx, fy, fz, dx, dy, dz, c, r, maxT, nOut) {
   const ox = fx - c.x, oy = fy - c.y, oz = fz - c.z;
   const b = ox * dx + oy * dy + oz * dz, cc = ox * ox + oy * oy + oz * oz - r * r;
-  let t;
-  if (cc <= 0) t = 0; // starts inside
-  else {
-    if (b > 0) return -1;
-    const disc = b * b - cc;
-    if (disc < 0) return -1;
-    t = -b - Math.sqrt(disc);
-  }
+  if (cc <= 0 || b > 0) return -1; // starts inside, or moving away
+  const disc = b * b - cc;
+  if (disc < 0) return -1;
+  const t = -b - Math.sqrt(disc);
   if (t >= maxT) return -1;
-  if (t === 0 && cc <= 0) { nOut[0] = -dx; nOut[1] = -dy; nOut[2] = -dz; return 0; }
   const hx = ox + dx * t, hy = oy + dy * t, hz = oz + dz * t, l = Math.sqrt(hx * hx + hy * hy + hz * hz) || 1;
   nOut[0] = hx / l; nOut[1] = hy / l; nOut[2] = hz / l;
   return t;
@@ -744,8 +743,7 @@ function rayBox(fx, fy, fz, dx, dy, dz, car, maxT, nOut) {
     if (t2 < tmax) tmax = t2;
     if (tmin > tmax) return -1;
   }
-  if (tmin >= maxT) return -1;
-  if (axis < 0) { nOut[0] = -dx; nOut[1] = -dy; nOut[2] = -dz; return 0; } // starts inside
+  if (tmin >= maxT || axis < 0) return -1; // beyond the ray, or starts inside
   nOut[0] = R[axis] * sgn; nOut[1] = R[3 + axis] * sgn; nOut[2] = R[6 + axis] * sgn;
   return tmin;
 }
