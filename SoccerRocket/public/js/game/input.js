@@ -75,7 +75,8 @@ export class Input {
       // is held) must not reach the browser: Ctrl+S / F / D / E / P open dialogs or
       // steal focus. Ctrl+W / T / N can't be cancelled; the App's beforeunload
       // guard turns a tab close into a 'Leave site?' prompt instead.
-      if ((e.ctrlKey || e.metaKey) && this.playing() && this.isBound(e.code)) e.preventDefault();
+      // With Ctrl / Cmd itself bound, any combo it makes mid-match is accidental.
+      if ((e.ctrlKey || e.metaKey) && this.playing() && (this.isBound(e.code) || this.modifierBound())) e.preventDefault();
       down(e.code, e);
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.code));
@@ -107,6 +108,10 @@ export class Input {
     const b = this.settings.bindings;
     for (const k in b) if (b[k] && b[k].includes(code)) return true;
     return false;
+  }
+
+  modifierBound() {
+    return this.isBound('ControlLeft') || this.isBound('ControlRight') || this.isBound('MetaLeft') || this.isBound('MetaRight');
   }
 
   bound(action) {
